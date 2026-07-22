@@ -1,4 +1,9 @@
-# Style-Bert-VITS2
+# Style-Bert-VITS2 (SBV2-KR: 한국어 지원 포크)
+
+> **🇰🇷 이 포크는 한국어(`KO`) 학습·추론 모드를 추가한 버전입니다.**
+> 한국어 G2P(표준발음법 기반)와 klue/roberta-large를 이용하며, 웹 UI의 주요 탭
+> (음성 합성·데이터셋 생성·학습)은 한국어로 표시됩니다. 자세한 내용은
+> [docs/Style-Bert-VITS2_ko.md](/docs/Style-Bert-VITS2_ko.md)를 참조하세요.
 
 **利用の際は必ず[お願いとデフォルトモデルの利用規約](/docs/TERMS_OF_USE.md)をお読みください。**
 
@@ -81,7 +86,7 @@ git clone https://github.com/litagin02/Style-Bert-VITS2.git
 cd Style-Bert-VITS2
 uv venv venv
 venv\Scripts\activate
-uv pip install "torch<2.4" "torchaudio<2.4" --index-url https://download.pytorch.org/whl/cu118
+uv pip install "torch<2.6" "torchaudio<2.6" --index-url https://download.pytorch.org/whl/cu118
 uv pip install -r requirements.txt
 python initialize.py  # 必要なモデルとデフォルトTTSモデルをダウンロード
 ```
