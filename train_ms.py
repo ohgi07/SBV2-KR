@@ -69,7 +69,7 @@ def run():
         "-m",
         "--model",
         type=str,
-        help="数据集文件夹路径，请注意，数据不再默认放在/logs文件夹下。如果需要用命令行配置，请声明相对于根目录的路径",
+        help="Dataset folder path. Note that data is no longer placed under the /logs folder by default. When configuring via command line, specify the path relative to the root directory.",
         default=config.dataset_path,
     )
     parser.add_argument(

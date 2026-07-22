@@ -65,6 +65,7 @@ def load_model(
     - 日本語: ku-nlp/deberta-v2-large-japanese-char-wwm
     - 英語: microsoft/deberta-v3-large
     - 中国語: hfl/chinese-roberta-wwm-ext-large
+    - 韓国語: klue/roberta-large
 
     Args:
         language (Languages): ロードする学習済みモデルの対象言語
@@ -92,6 +93,9 @@ def load_model(
     # BERT モデルをロードし、辞書に格納して返す
     ## 英語のみ DebertaV2Model でロードする必要がある
     start_time = time.time()
+    ## transformers 5.x は config の torch_dtype を既定で尊重するため、fp16 で保存された
+    ## モデル (ku-nlp/deberta-v2-large-japanese-char-wwm など) が half でロードされ
+    ## 下流の fp32 Conv1d と dtype が衝突する。従来挙動 (fp32) を明示する
     if language == Languages.EN:
         __loaded_models[language] = cast(
             DebertaV2Model,
@@ -100,6 +104,7 @@ def load_model(
                 device_map=device_map,
                 cache_dir=cache_dir,
                 revision=revision,
+                dtype="float32",
             ),
         )
     else:
@@ -108,6 +113,7 @@ def load_model(
             device_map=device_map,
             cache_dir=cache_dir,
             revision=revision,
+            dtype="float32",
         )
     logger.info(
         f"Loaded the {language.name} BERT model from {pretrained_model_name_or_path} ({time.time() - start_time:.2f}s)"
@@ -134,6 +140,7 @@ def load_tokenizer(
     - 日本語: ku-nlp/deberta-v2-large-japanese-char-wwm
     - 英語: microsoft/deberta-v3-large
     - 中国語: hfl/chinese-roberta-wwm-ext-large
+    - 韓国語: klue/roberta-large
 
     Args:
         language (Languages): ロードする学習済みモデルの対象言語

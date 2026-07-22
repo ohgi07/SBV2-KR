@@ -7,6 +7,7 @@ import platform
 import torch
 import torch.distributed as dist
 from huggingface_hub import HfApi
+from huggingface_hub.utils import disable_progress_bars
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -56,6 +57,52 @@ global_step = 0
 api = HfApi()
 
 
+def backup_to_hf(repo_id: str, upload_assets: bool = True, blocking: bool = False) -> None:
+    """Upload the Data dir (and optionally model assets) to the Hugging Face backup repo.
+
+    Uploads run in the background (sequentially, on HfApi's internal worker thread);
+    each finished upload is reported as a single log line with its commit URL
+    instead of per-file progress bars.
+    """
+
+    def log_result(name: str):
+        def callback(future):
+            e = future.exception()
+            if e is not None:
+                logger.error(f"HF backup failed ({name}): {e}")
+            else:
+                logger.info(f"HF backup: {name} -> {future.result().commit_url}")
+
+        return callback
+
+    futures = []
+    future = api.upload_folder(
+        repo_id=repo_id,
+        folder_path=config.dataset_path,
+        path_in_repo=f"Data/{config.model_name}",
+        delete_patterns="*.pth",  # Only keep the latest checkpoint
+        ignore_patterns=["wavs/*", "raw/*"],  # HF rejects >10k files per directory; raw data is restorable
+        run_as_future=True,
+    )
+    future.add_done_callback(log_result(f"Data/{config.model_name}"))
+    futures.append(future)
+    if upload_assets:
+        future = api.upload_folder(
+            repo_id=repo_id,
+            folder_path=config.out_dir,
+            path_in_repo=f"model_assets/{config.model_name}",
+            run_as_future=True,
+        )
+        future.add_done_callback(log_result(f"model_assets/{config.model_name}"))
+        futures.append(future)
+    if blocking:
+        for future in futures:
+            try:
+                future.result()
+            except Exception:
+                pass  # Already logged by the callback
+
+
 def run():
     # Command line configuration is not recommended unless necessary, use config.yml
     parser = argparse.ArgumentParser()
@@ -70,7 +117,7 @@ def run():
         "-m",
         "--model",
         type=str,
-        help="数据集文件夹路径，请注意，数据不再默认放在/logs文件夹下。如果需要用命令行配置，请声明相对于根目录的路径",
+        help="Dataset folder path. Note that data is no longer placed under the /logs folder by default. When configuring via command line, specify the path relative to the root directory.",
         default=config.dataset_path,
     )
     parser.add_argument(
@@ -174,6 +221,8 @@ def run():
     """
 
     if args.repo_id is not None:
+        # Per-file progress bars garble the training tqdm output; log commit URLs instead
+        disable_progress_bars()
         # First try to upload config.json to check if the repo exists
         try:
             api.upload_file(
@@ -187,15 +236,9 @@ def run():
                 f"Failed to upload files to the repo {hps.repo_id}. Please check if the repo exists and you have logged in using `huggingface-cli login`."
             )
             raise e
+        logger.info(f"Backing up to https://huggingface.co/{hps.repo_id} (uploads run in the background)")
         # Upload Data dir for resuming training
-        api.upload_folder(
-            repo_id=hps.repo_id,
-            folder_path=config.dataset_path,
-            path_in_repo=f"Data/{config.model_name}",
-            delete_patterns="*.pth",  # Only keep the latest checkpoint
-            ignore_patterns=f"{config.dataset_path}/raw",  # Ignore raw data
-            run_as_future=True,
-        )
+        backup_to_hf(hps.repo_id, upload_assets=False)
     os.makedirs(config.out_dir, exist_ok=True)
 
     if not args.skip_default_style:
@@ -651,25 +694,8 @@ def run():
                 for_infer=True,
             )
             if hps.repo_id is not None:
-                future1 = api.upload_folder(
-                    repo_id=hps.repo_id,
-                    folder_path=config.dataset_path,
-                    path_in_repo=f"Data/{config.model_name}",
-                    delete_patterns="*.pth",  # Only keep the latest checkpoint
-                    ignore_patterns=f"{config.dataset_path}/raw",  # Ignore raw data
-                    run_as_future=True,
-                )
-                future2 = api.upload_folder(
-                    repo_id=hps.repo_id,
-                    folder_path=config.out_dir,
-                    path_in_repo=f"model_assets/{config.model_name}",
-                    run_as_future=True,
-                )
-                try:
-                    future1.result()
-                    future2.result()
-                except Exception as e:
-                    logger.error(e)
+                # Final backup: wait for the uploads to finish before exiting
+                backup_to_hf(hps.repo_id, blocking=True)
 
     if pbar is not None:
         pbar.close()
@@ -1018,20 +1044,7 @@ def train_and_evaluate(
                     for_infer=True,
                 )
                 if hps.repo_id is not None:
-                    api.upload_folder(
-                        repo_id=hps.repo_id,
-                        folder_path=config.dataset_path,
-                        path_in_repo=f"Data/{config.model_name}",
-                        delete_patterns="*.pth",  # Only keep the latest checkpoint
-                        ignore_patterns=f"{config.dataset_path}/raw",  # Ignore raw data
-                        run_as_future=True,
-                    )
-                    api.upload_folder(
-                        repo_id=hps.repo_id,
-                        folder_path=config.out_dir,
-                        path_in_repo=f"model_assets/{config.model_name}",
-                        run_as_future=True,
-                    )
+                    backup_to_hf(hps.repo_id)
 
         global_step += 1
         if pbar is not None:

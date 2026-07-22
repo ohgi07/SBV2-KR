@@ -38,6 +38,8 @@ train_ms:
     WORLD_SIZE: 1
     LOCAL_RANK: 0
     RANK: 0
+    # Windows の torch 2.4+ は libuv 非対応ビルドのため TCPStore の libuv を無効化する
+    USE_LIBUV: 0
   model_dir: "models"  # The directory to save the model (for training), relative to `{dataset_root}/{model_name}`.
   config_path: "config.json"
   num_workers: 16

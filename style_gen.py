@@ -5,18 +5,19 @@ from typing import Any
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from pyannote.audio import Inference, Model
+from pyannote.audio import Inference
 from tqdm import tqdm
 
 from config import get_config
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models.hyper_parameters import HyperParameters
+from style_bert_vits2.utils import load_pyannote_wespeaker_model
 from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
 
 
 config = get_config()
 
-model = Model.from_pretrained("pyannote/wespeaker-voxceleb-resnet34-LM")
+model = load_pyannote_wespeaker_model()
 inference = Inference(model, window="whole")
 device = torch.device(config.style_gen_config.device)
 inference.to(device)

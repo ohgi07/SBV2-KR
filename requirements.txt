@@ -1,12 +1,15 @@
 accelerate
 cmudict
 cn2an
-faster-whisper==0.10.1
+faster-whisper==1.0.3
 g2p_en
+# Korean morphological analyzer.
+kiwipiepy
 GPUtil
 gradio>=4.32
 jieba
 librosa==0.9.2
+setuptools<81
 loguru
 nltk<=3.8.1
 num2words
@@ -20,14 +23,17 @@ onnxsim-prebuilt
 protobuf==4.25
 psutil
 punctuators
-pyannote.audio>=3.1.0
+pyannote.audio>=3.1.0,<4
 pyloudnorm
 pyopenjtalk-dict
 pypinyin
 pyworld-prebuilt
 stable_ts
 tensorboard
-torch<2.4
-torchaudio<2.4
-transformers
+torch<2.6
+torchaudio<2.6
+# audio_utils in transformers 5.x requests soxr when importing
+# (If missing, the DebertaV2Model / BERT model load itself will fail)
+soxr
+transformers<6
 umap-learn

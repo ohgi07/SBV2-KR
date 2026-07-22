@@ -12,10 +12,12 @@ BASE_DIR = Path(__file__).parent.parent
 
 # 利用可能な言語
 ## JP-Extra モデル利用時は JP 以外の言語の音声合成はできない
+## KO (韓国語) は JP-Extra 系アーキテクチャ (単一 BERT 入力) での学習・推論を前提とする
 class Languages(StrEnum):
     JP = "JP"
     EN = "EN"
     ZH = "ZH"
+    KO = "KO"
 
 
 # 言語ごとのデフォルトの BERT モデルのパス
@@ -23,6 +25,7 @@ DEFAULT_BERT_MODEL_PATHS = {
     Languages.JP: BASE_DIR / "bert" / "deberta-v2-large-japanese-char-wwm",
     Languages.EN: BASE_DIR / "bert" / "deberta-v3-large",
     Languages.ZH: BASE_DIR / "bert" / "chinese-roberta-wwm-ext-large",
+    Languages.KO: BASE_DIR / "bert" / "klue-roberta-large",
 }
 
 # 言語ごとのデフォルトの BERT モデル (ONNX 版) のパス
@@ -30,6 +33,7 @@ DEFAULT_ONNX_BERT_MODEL_PATHS = {
     Languages.JP: BASE_DIR / "bert" / "deberta-v2-large-japanese-char-wwm-onnx",
     Languages.EN: BASE_DIR / "bert" / "deberta-v3-large-onnx",
     Languages.ZH: BASE_DIR / "bert" / "chinese-roberta-wwm-ext-large-onnx",
+    Languages.KO: BASE_DIR / "bert" / "klue-roberta-large-onnx",
 }
 
 # デフォルトのユーザー辞書ディレクトリ

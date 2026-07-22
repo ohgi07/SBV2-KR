@@ -122,7 +122,7 @@ if __name__ == "__main__":
         default="こんにちは。元気、ですかー？ふふっ、私は……ちゃんと元気だよ！",
     )
     parser.add_argument(
-        "--language", type=str, default="ja", choices=["ja", "en", "zh"]
+        "--language", type=str, default="ja", choices=["ja", "en", "zh", "ko"]
     )
     parser.add_argument("--model", type=str, default="large-v3")
     parser.add_argument("--device", type=str, default="cuda")
@@ -173,6 +173,8 @@ if __name__ == "__main__":
         language_id = Languages.EN.value
     elif language == "zh":
         language_id = Languages.ZH.value
+    elif language == "ko":
+        language_id = Languages.KO.value
     else:
         raise ValueError(f"{language} is not supported.")
 

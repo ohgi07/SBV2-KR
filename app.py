@@ -52,17 +52,17 @@ model_holder = TTSModelHolder(
 with gr.Blocks(theme=GRADIO_THEME) as app:
     gr.Markdown(f"# Style-Bert-VITS2 WebUI (version {VERSION})")
     with gr.Tabs():
-        with gr.Tab("音声合成"):
+        with gr.Tab("음성 합성"):
             create_inference_app(model_holder=model_holder)
-        with gr.Tab("データセット作成"):
+        with gr.Tab("데이터셋 생성"):
             create_dataset_app()
-        with gr.Tab("学習"):
+        with gr.Tab("학습"):
             create_train_app()
-        with gr.Tab("スタイル作成"):
+        with gr.Tab("스타일 생성"):
             create_style_vectors_app()
-        with gr.Tab("マージ"):
+        with gr.Tab("머지"):
             create_merge_app(model_holder=model_holder)
-        with gr.Tab("ONNX変換"):
+        with gr.Tab("ONNX 변환"):
             create_onnx_app(model_holder=model_holder)
 
 app.launch(

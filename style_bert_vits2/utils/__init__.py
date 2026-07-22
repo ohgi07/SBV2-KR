@@ -1,7 +1,55 @@
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Union
 
 import onnxruntime
+
+
+def ensure_safetensors_model(model_dir: Union[str, Path]) -> None:
+    """
+    ローカルモデルディレクトリに model.safetensors が無く pytorch_model.bin だけが
+    ある場合、safetensors に変換して保存する。
+
+    transformers 5.x は CVE-2025-32434 対応として、torch<2.6 環境では pickle 形式
+    (pytorch_model.bin) のロードを拒否する。本プロジェクトは pyannote.audio 3.x の
+    都合で torch<2.6 に固定しているため、safetensors 版が無いモデル
+    (microsoft/wavlm-base-plus など) は事前に変換しておく必要がある。
+    """
+
+    model_dir = Path(model_dir)
+    bin_path = model_dir / "pytorch_model.bin"
+    safetensors_path = model_dir / "model.safetensors"
+    if safetensors_path.exists() or not bin_path.exists():
+        return
+
+    import torch
+    from safetensors.torch import save_file
+
+    from style_bert_vits2.logging import logger
+
+    logger.info(f"Converting {bin_path} to {safetensors_path} ...")
+    state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
+    # ストレージを共有するテンソルは safetensors が拒否するため、独立した実体にして保存する
+    save_file({k: v.contiguous().clone() for k, v in state_dict.items()}, safetensors_path)  # fmt: skip
+    logger.info(f"Converted to {safetensors_path}")
+
+
+def load_pyannote_wespeaker_model() -> Any:
+    """
+    スタイルベクトル抽出用の pyannote/wespeaker-voxceleb-resnet34-LM モデルをロードする。
+
+    単純な Model.from_pretrained("pyannote/wespeaker-voxceleb-resnet34-LM") ではなく
+    この関数を使うのは、pyannote.audio 3.x の Model.from_pretrained(repo_id) が
+    huggingface_hub 1.x で削除された use_auth_token 引数を内部で渡して TypeError になるため
+    (transformers 5.x が hub>=1.5 を要求するため hub はダウングレードできない)。
+    hub API で直接取得したローカルパスを渡すことで回避する。
+    """
+
+    from huggingface_hub import hf_hub_download
+    from pyannote.audio import Model
+
+    checkpoint_path = hf_hub_download("pyannote/wespeaker-voxceleb-resnet34-LM", "pytorch_model.bin")  # fmt: skip
+    return Model.from_pretrained(checkpoint_path)
 
 
 def torch_device_to_onnx_providers(

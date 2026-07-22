@@ -9,6 +9,57 @@ import torch
 from style_bert_vits2.logging import logger
 
 
+def expand_embedding_if_needed(
+    key: str, saved_tensor: torch.Tensor, model_tensor: torch.Tensor
+) -> Optional[torch.Tensor]:
+    """
+    シンボルテーブル拡張 (韓国語対応など) の後方互換処理。
+    保存済みテンソルの 0 次元目だけがモデルより小さい場合 (音素・トーン・言語の
+    埋め込みテーブルが拡張された場合)、既存の行を先頭にコピーし、新規行は
+    モデルの初期値のままにした拡張済みテンソルを返す。
+    それ以外の形状不一致の場合は None を返す。
+    """
+    if (
+        saved_tensor.dim() == model_tensor.dim()
+        and saved_tensor.shape[0] < model_tensor.shape[0]
+        and saved_tensor.shape[1:] == model_tensor.shape[1:]
+    ):
+        expanded = model_tensor.clone()
+        expanded[: saved_tensor.shape[0]] = saved_tensor
+        logger.info(
+            f"Expanded {key} from {tuple(saved_tensor.shape)} to "
+            f"{tuple(model_tensor.shape)} (new rows keep their initial values)"
+        )
+        return expanded
+    return None
+
+
+def __expand_optimizer_state_if_needed(
+    optimizer: torch.optim.Optimizer, saved_optimizer: dict
+) -> None:
+    """
+    シンボルテーブル拡張前のチェックポイントの optimizer state (Adam の exp_avg 等) を
+    拡張後のモデルで読み込めるようにする後方互換処理。埋め込みに対応する state テンソルの
+    0 次元目が小さい場合、既存行を保持し新規行をゼロ (新規パラメータの初期 state) で拡張する。
+    """
+    params = [p for group in optimizer.param_groups for p in group["params"]]
+    for index, state in saved_optimizer.get("state", {}).items():
+        i = int(index)
+        if not (0 <= i < len(params)):
+            continue
+        param = params[i]
+        for key, tensor in state.items():
+            if not isinstance(tensor, torch.Tensor) or tensor.shape == param.shape:
+                continue
+            expanded = expand_embedding_if_needed(
+                f"optimizer state [{i}].{key}",
+                tensor,
+                torch.zeros(param.shape, dtype=tensor.dtype, device=tensor.device),
+            )
+            if expanded is not None:
+                state[key] = expanded
+
+
 def load_checkpoint(
     checkpoint_path: Union[str, Path],
     model: torch.nn.Module,
@@ -43,6 +94,7 @@ def load_checkpoint(
         and not skip_optimizer
         and checkpoint_dict["optimizer"] is not None
     ):
+        __expand_optimizer_state_if_needed(optimizer, checkpoint_dict["optimizer"])
         optimizer.load_state_dict(checkpoint_dict["optimizer"])
     elif optimizer is None and not skip_optimizer:
         # else:      Disable this line if Infer and resume checkpoint,then enable the line upper
@@ -76,6 +128,16 @@ def load_checkpoint(
                 )
             elif "enc_q" in k and for_infer:
                 continue
+            elif k in saved_state_dict:
+                # シンボルテーブル拡張 (韓国語対応など) による埋め込みサイズ差の吸収
+                expanded = expand_embedding_if_needed(k, saved_state_dict[k], v)
+                if expanded is not None:
+                    v = expanded
+                else:
+                    logger.error(
+                        f"Shape mismatch for {k}: "
+                        f"{tuple(saved_state_dict[k].shape)} != {tuple(v.shape)}"
+                    )
             else:
                 logger.error(f"{k} is not in the checkpoint {checkpoint_path}")
 

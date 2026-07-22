@@ -51,6 +51,8 @@ def extract_bert_feature(
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature
+    elif language == Languages.KO:
+        from style_bert_vits2.nlp.korean.bert_feature import extract_bert_feature
     else:
         raise ValueError(f"Language {language} not supported")
 
@@ -86,6 +88,8 @@ def extract_bert_feature_onnx(
         from style_bert_vits2.nlp.english.bert_feature import extract_bert_feature_onnx
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature_onnx
+    elif language == Languages.KO:
+        from style_bert_vits2.nlp.korean.bert_feature import extract_bert_feature_onnx
     else:
         raise ValueError(f"Language {language} not supported")
 
@@ -133,6 +137,12 @@ def clean_text(
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.g2p import g2p
         from style_bert_vits2.nlp.chinese.normalizer import normalize_text
+
+        norm_text = normalize_text(text)
+        phones, tones, word2ph = g2p(norm_text)
+    elif language == Languages.KO:
+        from style_bert_vits2.nlp.korean.g2p import g2p
+        from style_bert_vits2.nlp.korean.normalizer import normalize_text
 
         norm_text = normalize_text(text)
         phones, tones, word2ph = g2p(norm_text)

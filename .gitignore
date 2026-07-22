@@ -26,6 +26,7 @@ dist/
 /pretrained_jp_extra/*.pth
 
 /slm/*/*.bin
+/slm/*/*.safetensors
 
 /scripts/test/
 /scripts/lib/
@@ -33,6 +34,7 @@ dist/
 /scripts/sbv2/
 *.zip
 *.csv
+*.png
 *.bak
 /mos_results/
 

@@ -95,72 +95,76 @@ examples = [
         "语音合成是人工制造人类语音。用于此目的的计算机系统称为语音合成器，可以通过软件或硬件产品实现。",
         "ZH",
     ],
+    [
+        "음성 합성은 기계학습을 활용하여 텍스트로부터 사람의 목소리를 재현하는 기술입니다. 자연스러운 발음과 감정 표현이 가능합니다!",
+        "KO",
+    ],
 ]
 
 initial_md = """
-- Ver 2.5で追加されたデフォルトの [`koharune-ami`（小春音アミ）モデル](https://huggingface.co/litagin/sbv2_koharune_ami) と[`amitaro`（あみたろ）モデル](https://huggingface.co/litagin/sbv2_amitaro) は、[あみたろの声素材工房](https://amitaro.net/)で公開されているコーパス音源・ライブ配信音声を利用して事前に許可を得て学習したモデルです。下記の**利用規約を必ず読んで**からご利用ください。
+- Ver 2.5에서 추가된 기본 [`koharune-ami`(코하루네 아미) 모델](https://huggingface.co/litagin/sbv2_koharune_ami)과 [`amitaro`(아미타로) 모델](https://huggingface.co/litagin/sbv2_amitaro)은 [아미타로의 목소리 소재 공방](https://amitaro.net/)에서 공개된 코퍼스 음원·라이브 방송 음성을 사전에 허가를 받아 학습한 모델입니다. 아래의 **이용약관을 반드시 읽은 뒤** 이용해 주세요.
 
-- Ver 2.5のアップデート後に上記モデルをダウンロードするには、`Initialize.bat`をダブルクリックするか、手動でダウンロードして`model_assets`ディレクトリに配置してください。
+- Ver 2.5 업데이트 후 위 모델을 다운로드하려면 `Initialize.bat`을 더블클릭하거나, 수동으로 다운로드해 `model_assets` 디렉터리에 배치해 주세요.
 
-- Ver 2.3で追加された**エディター版**のほうが実際に読み上げさせるには使いやすいかもしれません。`Editor.bat`か`python server_editor.py --inbrowser`で起動できます。
+- Ver 2.3에서 추가된 **에디터판**이 실제 낭독 용도로는 더 쓰기 편할 수 있습니다. `Editor.bat` 또는 `python server_editor.py --inbrowser`로 실행할 수 있습니다.
 """
 
 terms_of_use_md = """
-## お願いとデフォルトモデルのライセンス
+## 부탁 사항과 기본 모델 라이선스
 
-最新のお願い・利用規約は [こちら](https://github.com/litagin02/Style-Bert-VITS2/blob/master/docs/TERMS_OF_USE.md) を参照してください。常に最新のものが適用されます。
+최신 부탁 사항·이용약관은 [여기](https://github.com/litagin02/Style-Bert-VITS2/blob/master/docs/TERMS_OF_USE.md)를 참조해 주세요. 항상 최신 버전이 적용됩니다.
 
-Style-Bert-VITS2を用いる際は、以下のお願いを守っていただけると幸いです。ただしモデルの利用規約以前の箇所はあくまで「お願い」であり、何の強制力はなく、Style-Bert-VITS2の利用規約ではありません。よって[リポジトリのライセンス](https://github.com/litagin02/Style-Bert-VITS2#license)とは矛盾せず、リポジトリの利用にあたっては常にリポジトリのライセンスのみが拘束力を持ちます。
+Style-Bert-VITS2를 사용할 때는 아래의 부탁 사항을 지켜 주시면 감사하겠습니다. 다만 모델 이용약관 이전 부분은 어디까지나 「부탁」이며 아무런 강제력이 없고, Style-Bert-VITS2의 이용약관도 아닙니다. 따라서 [리포지토리 라이선스](https://github.com/litagin02/Style-Bert-VITS2#license)와 모순되지 않으며, 리포지토리 이용에 있어서는 항상 리포지토리 라이선스만이 구속력을 가집니다.
 
-### やってほしくないこと
+### 하지 말아 주었으면 하는 것
 
-以下の目的での利用はStyle-Bert-VITS2を使ってほしくありません。
+다음 목적으로는 Style-Bert-VITS2를 사용하지 말아 주세요.
 
-- 法律に違反する目的
-- 政治的な目的（本家Bert-VITS2で禁止されています）
-- 他者を傷つける目的
-- なりすまし・ディープフェイク作成目的
+- 법률을 위반하는 목적
+- 정치적인 목적 (본가 Bert-VITS2에서 금지되어 있습니다)
+- 타인을 해치는 목적
+- 사칭·딥페이크 제작 목적
 
-### 守ってほしいこと
+### 지켜 주었으면 하는 것
 
-- Style-Bert-VITS2を利用する際は、使用するモデルの利用規約・ライセンス必ず確認し、存在する場合はそれに従ってほしいです。
-- またソースコードを利用する際は、[リポジトリのライセンス](https://github.com/litagin02/Style-Bert-VITS2#license)に従ってほしいです。
+- Style-Bert-VITS2를 이용할 때는 사용하는 모델의 이용약관·라이선스를 반드시 확인하고, 존재하는 경우 그에 따라 주세요.
+- 또한 소스 코드를 이용할 때는 [리포지토리 라이선스](https://github.com/litagin02/Style-Bert-VITS2#license)를 따라 주세요.
 
-以下はデフォルトで付随しているモデルのライセンスです。
+아래는 기본으로 포함된 모델들의 라이선스입니다.
 
-### JVNVコーパス (jvnv-F1-jp, jvnv-F2-jp, jvnv-M1-jp, jvnv-M2-jp)
+### JVNV 코퍼스 (jvnv-F1-jp, jvnv-F2-jp, jvnv-M1-jp, jvnv-M2-jp)
 
-- [JVNVコーパス](https://sites.google.com/site/shinnosuketakamichi/research-topics/jvnv_corpus) のライセンスは[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.ja)ですので、これを継承します。
+- [JVNV 코퍼스](https://sites.google.com/site/shinnosuketakamichi/research-topics/jvnv_corpus)의 라이선스는 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.ja)이므로 이를 계승합니다.
 
-### 小春音アミ (koharune-ami) / あみたろ (amitaro)
+### 코하루네 아미 (koharune-ami) / 아미타로 (amitaro)
 
-[あみたろの声素材工房様の規約](https://amitaro.net/voice/voice_rule/) と [あみたろのライブ配信音声・利用規約](https://amitaro.net/voice/livevoice/#index_id6) を全て守らなければなりません。特に、以下の事項を遵守してください（規約を守れば商用非商用問わず利用できます）：
+[아미타로의 목소리 소재 공방 규약](https://amitaro.net/voice/voice_rule/)과 [아미타로 라이브 방송 음성 이용약관](https://amitaro.net/voice/livevoice/#index_id6)을 모두 지켜야 합니다. 특히 다음 사항을 준수해 주세요 (규약을 지키면 상업·비상업을 불문하고 이용할 수 있습니다):
 
-#### 禁止事項
+#### 금지 사항
 
-- 年齢制限のある作品・用途への使用
-- 新興宗教・政治・マルチ購などに深く関係する作品・用途
-- 特定の団体や個人や国家を誹謗中傷する作品・用途
-- 生成された音声を、あみたろ本人の声として扱うこと
-- 生成された音声を、あみたろ以外の人の声として扱うこと
+- 연령 제한이 있는 작품·용도에 사용
+- 신흥 종교·정치·다단계 등에 깊이 관련된 작품·용도
+- 특정 단체·개인·국가를 비방 중상하는 작품·용도
+- 생성된 음성을 아미타로 본인의 목소리로 취급하는 것
+- 생성된 음성을 아미타로 이외의 사람의 목소리로 취급하는 것
 
-#### クレジット表記
+#### 크레딧 표기
 
-生成音声を公開する際は（媒体は問わない）、必ず分かりやすい場所に `あみたろの声素材工房 (https://amitaro.net/)` の声を元にした音声モデルを使用していることが分かるようなクレジット表記を記載してください。
+생성 음성을 공개할 때는 (매체 불문) 반드시 알아보기 쉬운 곳에 `あみたろの声素材工房 (https://amitaro.net/)`의 목소리를 바탕으로 한 음성 모델을 사용했음을 알 수 있는 크레딧 표기를 기재해 주세요.
 
-クレジット表記例:
+크레딧 표기 예:
 - `Style-BertVITS2モデル: 小春音アミ、あみたろの声素材工房 (https://amitaro.net/)`
 - `Style-BertVITS2モデル: あみたろ、あみたろの声素材工房 (https://amitaro.net/)`
 
-#### モデルマージ
+#### 모델 머지
 
-モデルマージに関しては、[あみたろの声素材工房のよくある質問への回答](https://amitaro.net/voice/faq/#index_id17)を遵守してください：
-- 本モデルを別モデルとマージできるのは、その別モデル作成の際に学習に使われた声の権利者が許諾している場合に限る
-- あみたろの声の特徴が残っている場合（マージの割合が25%以上の場合）は、その利用は[あみたろの声素材工房様の規約](https://amitaro.net/voice/voice_rule/)の範囲内に限定され、そのモデルに関してもこの規約が適応される
+모델 머지에 관해서는 [아미타로의 목소리 소재 공방 FAQ 답변](https://amitaro.net/voice/faq/#index_id17)을 준수해 주세요:
+- 본 모델을 다른 모델과 머지할 수 있는 것은, 그 다른 모델 제작 시 학습에 사용된 목소리의 권리자가 허락한 경우에 한함
+- 아미타로 목소리의 특징이 남아 있는 경우 (머지 비율이 25% 이상인 경우), 그 이용은 [아미타로의 목소리 소재 공방 규약](https://amitaro.net/voice/voice_rule/) 범위 내로 한정되며, 해당 모델에도 이 규약이 적용됨
 """
 
 how_to_md = """
-下のように`model_assets`ディレクトリの中にモデルファイルたちを置いてください。
+아래와 같이 `model_assets` 디렉터리 안에 모델 파일들을 배치해 주세요.
 ```
 model_assets
 ├── your_model
@@ -172,20 +176,20 @@ model_assets
 └── another_model
     ├── ...
 ```
-各モデルにはファイルたちが必要です：
-- `config.json`：学習時の設定ファイル
-- `*.safetensors`：学習済みモデルファイル（1つ以上が必要、複数可）
-- `style_vectors.npy`：スタイルベクトルファイル
+각 모델에는 다음 파일들이 필요합니다:
+- `config.json`: 학습 시 설정 파일
+- `*.safetensors`: 학습된 모델 파일 (1개 이상 필요, 여러 개 가능)
+- `style_vectors.npy`: 스타일 벡터 파일
 
-上2つは`Train.bat`による学習で自動的に正しい位置に保存されます。`style_vectors.npy`は`Style.bat`を実行して指示に従って生成してください。
+위 2개는 `Train.bat` 학습으로 자동으로 올바른 위치에 저장됩니다. `style_vectors.npy`는 `Style.bat`을 실행해 지시에 따라 생성해 주세요.
 """
 
 style_md = f"""
-- プリセットまたは音声ファイルから読み上げの声音・感情・スタイルのようなものを制御できます。
-- デフォルトの{DEFAULT_STYLE}でも、十分に読み上げる文に応じた感情で感情豊かに読み上げられます。このスタイル制御は、それを重み付きで上書きするような感じです。
-- 強さを大きくしすぎると発音が変になったり声にならなかったりと崩壊することがあります。
-- どのくらいに強さがいいかはモデルやスタイルによって異なるようです。
-- 音声ファイルを入力する場合は、学習データと似た声音の話者（特に同じ性別）でないとよい効果が出ないかもしれません。
+- 프리셋 또는 음성 파일로 낭독의 음색·감정·스타일 같은 것을 제어할 수 있습니다.
+- 기본값인 {DEFAULT_STYLE}로도 읽는 문장에 맞는 감정으로 충분히 풍부하게 낭독됩니다. 이 스타일 제어는 그것을 가중치를 두고 덮어쓰는 느낌입니다.
+- 강도를 너무 크게 하면 발음이 이상해지거나 목소리가 되지 않는 등 무너질 수 있습니다.
+- 어느 정도 강도가 좋은지는 모델·스타일에 따라 다른 것 같습니다.
+- 음성 파일을 입력하는 경우, 학습 데이터와 비슷한 음색의 화자 (특히 같은 성별)가 아니면 좋은 효과가 나지 않을 수 있습니다.
 """
 voice_keys = ["dec"]
 voice_pitch_keys = ["flow"]
@@ -194,15 +198,15 @@ tempo_keys = ["sdp", "dp"]
 
 
 def make_interactive():
-    return gr.update(interactive=True, value="音声合成")
+    return gr.update(interactive=True, value="음성 합성")
 
 
 def make_non_interactive():
-    return gr.update(interactive=False, value="音声合成（モデルをロードしてください）")
+    return gr.update(interactive=False, value="음성 합성 (모델을 로드해 주세요)")
 
 
 def gr_util(item):
-    if item == "プリセットから選ぶ":
+    if item == "프리셋에서 선택":
         return (gr.update(visible=True), gr.Audio(visible=False, value=None))
     else:
         return (gr.update(visible=False), gr.update(visible=True))
@@ -272,11 +276,11 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
         if use_tone and kata_tone_json_str != "":
             if language != "JP":
                 logger.warning("Only Japanese is supported for tone generation.")
-                wrong_tone_message = "アクセント指定は現在日本語のみ対応しています。"
+                wrong_tone_message = "악센트 지정은 현재 일본어만 지원합니다."
             if line_split:
                 logger.warning("Tone generation is not supported for line split.")
                 wrong_tone_message = (
-                    "アクセント指定は改行で分けて生成を使わない場合のみ対応しています。"
+                    "악센트 지정은 줄바꿈 단위 생성을 사용하지 않는 경우에만 지원됩니다."
                 )
             try:
                 kata_tone = []
@@ -287,7 +291,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                     kata_tone.append((kana, tone))
             except Exception as e:
                 logger.warning(f"Error occurred when parsing kana_tone_json: {e}")
-                wrong_tone_message = f"アクセント指定が不正です: {e}"
+                wrong_tone_message = f"악센트 지정이 잘못되었습니다: {e}"
                 kata_tone = None
 
         # toneは実際に音声合成に代入される際のみnot Noneになる
@@ -325,7 +329,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
             )
         except InvalidToneError as e:
             logger.error(f"Tone error: {e}")
-            return f"Error: アクセント指定が不正です:\n{e}", None, kata_tone_json_str
+            return f"Error: 악센트 지정이 잘못되었습니다:\n{e}", None, kata_tone_json_str
         except ValueError as e:
             logger.error(f"Value error: {e}")
             return f"Error: {e}", None, kata_tone_json_str
@@ -355,7 +359,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
         )
         with gr.Blocks() as app:
             gr.Markdown(
-                f"Error: モデルが見つかりませんでした。{model_holder.root_dir}にモデルを置いてください。"
+                f"Error: 모델을 찾을 수 없습니다. {model_holder.root_dir}에 모델을 배치해 주세요."
             )
         return app
     initial_id = 0
@@ -366,42 +370,42 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
         gr.Markdown(terms_of_use_md)
         null_models = gr.State({})
         force_reload_model = gr.State(False)
-        with gr.Accordion(label="使い方", open=False):
+        with gr.Accordion(label="사용법", open=False):
             gr.Markdown(how_to_md)
         with gr.Row():
             with gr.Column():
                 with gr.Row():
                     with gr.Column(scale=3):
                         model_name = gr.Dropdown(
-                            label="モデル一覧",
+                            label="모델 목록",
                             choices=model_names,
                             value=model_names[initial_id],
                         )
                         model_path = gr.Dropdown(
-                            label="モデルファイル",
+                            label="모델 파일",
                             choices=initial_pth_files,
                             value=initial_pth_files[0],
                         )
-                    refresh_button = gr.Button("更新", scale=1, visible=True)
-                    load_button = gr.Button("ロード", scale=1, variant="primary")
-                text_input = gr.TextArea(label="テキスト", value=initial_text)
+                    refresh_button = gr.Button("새로고침", scale=1, visible=True)
+                    load_button = gr.Button("로드", scale=1, variant="primary")
+                text_input = gr.TextArea(label="텍스트", value=initial_text)
                 pitch_scale = gr.Slider(
                     minimum=0.8,
                     maximum=1.5,
                     value=1,
                     step=0.05,
-                    label="音高(1以外では音質劣化)",
+                    label="음높이 (1 이외에는 음질 저하)",
                 )
                 intonation_scale = gr.Slider(
                     minimum=0,
                     maximum=2,
                     value=1,
                     step=0.1,
-                    label="抑揚(1以外では音質劣化)",
+                    label="억양 (1 이외에는 음질 저하)",
                 )
 
                 line_split = gr.Checkbox(
-                    label="改行で分けて生成（分けたほうが感情が乗ります）",
+                    label="줄바꿈 단위로 나눠서 생성 (나누는 쪽이 감정이 더 잘 실립니다)",
                     value=DEFAULT_LINE_SPLIT,
                 )
                 split_interval = gr.Slider(
@@ -409,7 +413,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                     maximum=2,
                     value=DEFAULT_SPLIT_INTERVAL,
                     step=0.1,
-                    label="改行ごとに挟む無音の長さ（秒）",
+                    label="줄바꿈마다 넣는 무음 길이 (초)",
                 )
                 line_split.change(
                     lambda x: (gr.Slider(visible=x)),
@@ -417,18 +421,18 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                     outputs=[split_interval],
                 )
                 tone = gr.Textbox(
-                    label="アクセント調整（数値は 0=低 か1=高 のみ）",
-                    info="改行で分けない場合のみ使えます。万能ではありません。",
+                    label="악센트 조정 (숫자는 0=낮음, 1=높음만, 일본어 전용)",
+                    info="줄바꿈으로 나누지 않는 경우에만 사용할 수 있습니다. 만능은 아닙니다.",
                 )
-                use_tone = gr.Checkbox(label="アクセント調整を使う", value=False)
+                use_tone = gr.Checkbox(label="악센트 조정 사용", value=False)
                 use_tone.change(
                     lambda x: (gr.Checkbox(value=False) if x else gr.Checkbox()),
                     inputs=[use_tone],
                     outputs=[line_split],
                 )
-                language = gr.Dropdown(choices=languages, value="JP", label="Language")
-                speaker = gr.Dropdown(label="話者")
-                with gr.Accordion(label="詳細設定", open=False):
+                language = gr.Dropdown(choices=languages, value="JP", label="언어")
+                speaker = gr.Dropdown(label="화자")
+                with gr.Accordion(label="상세 설정", open=False):
                     sdp_ratio = gr.Slider(
                         minimum=0,
                         maximum=1,
@@ -458,12 +462,12 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                         label="Length",
                     )
                     use_assist_text = gr.Checkbox(
-                        label="Assist textを使う", value=False
+                        label="Assist text 사용", value=False
                     )
                     assist_text = gr.Textbox(
                         label="Assist text",
-                        placeholder="どうして私の意見を無視するの？許せない、ムカつく！死ねばいいのに。",
-                        info="このテキストの読み上げと似た声音・感情になりやすくなります。ただ抑揚やテンポ等が犠牲になる傾向があります。",
+                        placeholder="어째서 내 의견을 무시하는 거야? 용서 못 해, 짜증 나! 죽어버렸으면 좋겠어.",
+                        info="이 텍스트를 읽었을 때와 비슷한 음색·감정이 되기 쉬워집니다. 대신 억양·템포 등이 희생되는 경향이 있습니다.",
                         visible=False,
                     )
                     assist_text_weight = gr.Slider(
@@ -471,7 +475,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                         maximum=1,
                         value=DEFAULT_ASSIST_TEXT_WEIGHT,
                         step=0.1,
-                        label="Assist textの強さ",
+                        label="Assist text 강도",
                         visible=False,
                     )
                     use_assist_text.change(
@@ -479,10 +483,10 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                         inputs=[use_assist_text],
                         outputs=[assist_text, assist_text_weight],
                     )
-                with gr.Accordion(label="ヌルモデル", open=False):
+                with gr.Accordion(label="널 모델", open=False):
                     with gr.Row():
                         null_models_count = gr.Number(
-                            label="ヌルモデルの数", value=0, step=1
+                            label="널 모델 수", value=0, step=1
                         )
                     with gr.Column(variant="panel"):
 
@@ -500,13 +504,13 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                                         visible=False,
                                     )
                                     null_model_name = gr.Dropdown(
-                                        label="モデル一覧",
+                                        label="모델 목록",
                                         choices=model_names,
                                         key=f"null_model_name_{i}",
                                         value=model_names[initial_id],
                                     )
                                     null_model_path = gr.Dropdown(
-                                        label="モデルファイル",
+                                        label="모델 파일",
                                         key=f"null_model_path_{i}",
                                         # FIXME: 再レンダー時に選択肢が消えるのでどうにかしたい
                                         # 現在は再レンダーでvalueは保存されるが選択肢は保存されないので選択肢が空になる
@@ -519,7 +523,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                                         value=1,
                                         step=0.1,
                                         key=f"null_voice_weights_{i}",
-                                        label="声質",
+                                        label="음색",
                                     )
                                     null_voice_pitch_weights = gr.Slider(
                                         minimum=0,
@@ -527,7 +531,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                                         value=1,
                                         step=0.1,
                                         key=f"null_voice_pitch_weights_{i}",
-                                        label="声の高さ",
+                                        label="목소리 높이",
                                     )
                                     null_speech_style_weights = gr.Slider(
                                         minimum=0,
@@ -535,7 +539,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                                         value=1,
                                         step=0.1,
                                         key=f"null_speech_style_weights_{i}",
-                                        label="話し方",
+                                        label="말투",
                                     )
                                     null_tempo_weights = gr.Slider(
                                         minimum=0,
@@ -543,7 +547,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                                         value=1,
                                         step=0.1,
                                         key=f"null_tempo_weights_{i}",
-                                        label="テンポ",
+                                        label="템포",
                                     )
 
                                     null_model_name.change(
@@ -626,8 +630,8 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                                         outputs=[null_models, force_reload_model],
                                     )
 
-                    add_btn = gr.Button("ヌルモデルを増やす")
-                    del_btn = gr.Button("ヌルモデルを減らす")
+                    add_btn = gr.Button("널 모델 추가")
+                    del_btn = gr.Button("널 모델 제거")
                     add_btn.click(
                         lambda x: x + 1,
                         inputs=[null_models_count],
@@ -640,36 +644,36 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                     )
 
             with gr.Column():
-                with gr.Accordion("スタイルについて詳細", open=False):
+                with gr.Accordion("스타일 상세 설명", open=False):
                     gr.Markdown(style_md)
                 style_mode = gr.Radio(
-                    ["プリセットから選ぶ", "音声ファイルを入力"],
-                    label="スタイルの指定方法",
-                    value="プリセットから選ぶ",
+                    ["프리셋에서 선택", "음성 파일 입력"],
+                    label="스타일 지정 방법",
+                    value="프리셋에서 선택",
                 )
                 style = gr.Dropdown(
-                    label=f"スタイル（{DEFAULT_STYLE}が平均スタイル）",
-                    choices=["モデルをロードしてください"],
-                    value="モデルをロードしてください",
+                    label=f"스타일 ({DEFAULT_STYLE}이 평균 스타일)",
+                    choices=["모델을 로드해 주세요"],
+                    value="모델을 로드해 주세요",
                 )
                 style_weight = gr.Slider(
                     minimum=0,
                     maximum=20,
                     value=DEFAULT_STYLE_WEIGHT,
                     step=0.1,
-                    label="スタイルの強さ（声が崩壊したら小さくしてください）",
+                    label="스타일 강도 (목소리가 무너지면 줄여 주세요)",
                 )
                 ref_audio_path = gr.Audio(
-                    label="参照音声", type="filepath", visible=False
+                    label="참조 음성", type="filepath", visible=False
                 )
                 tts_button = gr.Button(
-                    "音声合成（モデルをロードしてください）",
+                    "음성 합성 (모델을 로드해 주세요)",
                     variant="primary",
                     interactive=False,
                 )
-                text_output = gr.Textbox(label="情報")
-                audio_output = gr.Audio(label="結果")
-                with gr.Accordion("テキスト例", open=False):
+                text_output = gr.Textbox(label="정보")
+                audio_output = gr.Audio(label="결과")
+                with gr.Accordion("텍스트 예시", open=False):
                     gr.Examples(examples, inputs=[text_input, language])
 
         tts_button.click(

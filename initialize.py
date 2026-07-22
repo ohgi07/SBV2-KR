@@ -6,6 +6,8 @@ from pathlib import Path
 import yaml
 from huggingface_hub import hf_hub_download
 
+# torch<2.6 では transformers が pytorch_model.bin のロードを拒否するため safetensors に変換する
+from style_bert_vits2.utils import ensure_safetensors_model
 from style_bert_vits2.logging import logger
 
 
@@ -18,6 +20,7 @@ def download_bert_models():
             if not Path(local_path).joinpath(file).exists():
                 logger.info(f"Downloading {k} {file}")
                 hf_hub_download(v["repo_id"], file, local_dir=local_path)
+        ensure_safetensors_model(local_path)
 
 
 def download_slm_model():
@@ -26,6 +29,7 @@ def download_slm_model():
     if not Path(local_path).joinpath(file).exists():
         logger.info(f"Downloading wavlm-base-plus {file}")
         hf_hub_download("microsoft/wavlm-base-plus", file, local_dir=local_path)
+    ensure_safetensors_model(local_path)
 
 
 def download_pretrained_models():

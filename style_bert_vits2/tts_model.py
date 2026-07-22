@@ -300,10 +300,10 @@ class TTSModel:
             # スタイルベクトルを取得するための推論モデルを初期化
             import torch
 
+            from style_bert_vits2.utils import load_pyannote_wespeaker_model
+
             self.style_vector_inference = pyannote.audio.Inference(
-                model=pyannote.audio.Model.from_pretrained(
-                    "pyannote/wespeaker-voxceleb-resnet34-LM"
-                ),
+                model=load_pyannote_wespeaker_model(),
                 window="whole",
             )
             self.style_vector_inference.to(torch.device(self.device))
@@ -408,9 +408,10 @@ class TTSModel:
         """
 
         logger.info(f"Start generating audio data from text:\n{text}")
-        if language != "JP" and self.hyper_parameters.version.endswith("JP-Extra"):
+        # KO は JP-Extra 系アーキテクチャ (単一 BERT 入力) を共用するため許可する
+        if language not in ("JP", "KO") and self.hyper_parameters.version.endswith("JP-Extra"):  # fmt: skip
             raise ValueError(
-                "The model is trained with JP-Extra, but the language is not JP"
+                "The model is trained with JP-Extra, but the language is not JP or KO"
             )
         if reference_audio_path == "":
             reference_audio_path = None
@@ -721,7 +722,7 @@ class TTSModelHolder:
             styles = list(self.current_model.style2id.keys())
             return (
                 gr.Dropdown(choices=styles, value=styles[0]),
-                gr.Button(interactive=True, value="音声合成"),
+                gr.Button(interactive=True, value="음성 합성"),
                 gr.Dropdown(choices=speakers, value=speakers[0]),
             )
         self.current_model = TTSModel(
@@ -735,7 +736,7 @@ class TTSModelHolder:
         styles = list(self.current_model.style2id.keys())
         return (
             gr.Dropdown(choices=styles, value=styles[0]),
-            gr.Button(interactive=True, value="音声合成"),
+            gr.Button(interactive=True, value="음성 합성"),
             gr.Dropdown(choices=speakers, value=speakers[0]),
         )
 

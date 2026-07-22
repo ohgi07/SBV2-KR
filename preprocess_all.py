@@ -50,7 +50,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--freeze_JP_bert",
         action="store_true",
-        help="Freeze Japanese BERT",
+        # KO は JP-Extra の単一 BERT スロット (ja_bert) を共用するため、このフラグで韓国語の BERT 部分も凍結される
+        help="Freeze Japanese BERT (Korean shares the JP-Extra BERT slot, so this freezes Korean BERT too)",
     )
     parser.add_argument(
         "--freeze_ZH_bert",

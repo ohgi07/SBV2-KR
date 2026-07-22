@@ -33,6 +33,21 @@ def load_safetensors(
             if key == "iteration":
                 iteration = f.get_tensor(key).item()
             tensors[key] = f.get_tensor(key)
+
+    # シンボルテーブル拡張 (韓国語対応など) の後方互換処理:
+    # 埋め込みテーブルの 0 次元目だけが小さい場合は既存の行を先頭にコピーして拡張する
+    from style_bert_vits2.models.utils.checkpoints import expand_embedding_if_needed
+
+    if hasattr(model, "module"):
+        model_state_dict = model.module.state_dict()
+    else:
+        model_state_dict = model.state_dict()
+    for key in list(tensors.keys()):
+        if key in model_state_dict and tensors[key].shape != model_state_dict[key].shape:  # fmt: skip
+            expanded = expand_embedding_if_needed(key, tensors[key], model_state_dict[key])  # fmt: skip
+            if expanded is not None:
+                tensors[key] = expanded
+
     if hasattr(model, "module"):
         result = model.module.load_state_dict(tensors, strict=False)
     else:

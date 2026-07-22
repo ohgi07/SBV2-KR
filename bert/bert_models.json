@@ -22,5 +22,9 @@
     "deberta-v3-large-onnx": {
         "repo_id": "tsukumijima/deberta-v3-large-onnx",
         "files": ["spm.model", "model_fp16.onnx"]
+    },
+    "klue-roberta-large": {
+        "repo_id": "klue/roberta-large",
+        "files": ["pytorch_model.bin"]
     }
 }

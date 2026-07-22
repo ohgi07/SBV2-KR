@@ -87,8 +87,13 @@ def get_text_onnx(
         bert = np.zeros((1024, len(phone)), dtype=np.float32)
         ja_bert = np.zeros((1024, len(phone)), dtype=np.float32)
         en_bert = bert_ori
+    elif language_str == Languages.KO:
+        # 韓国語は JP-Extra 系アーキテクチャ (単一 BERT 入力 = ja_bert スロット) を利用する
+        bert = np.zeros((1024, len(phone)), dtype=np.float32)
+        ja_bert = bert_ori
+        en_bert = np.zeros((1024, len(phone)), dtype=np.float32)
     else:
-        raise ValueError("language_str should be ZH, JP or EN")
+        raise ValueError("language_str should be ZH, JP, EN or KO")
 
     assert bert.shape[-1] == len(
         phone

@@ -117,7 +117,7 @@ def initialize(
         )
     except FileNotFoundError:
         logger.error(f"Step 1: {pretrained_dir} folder not found.")
-        return False, f"Step 1, Error: {pretrained_dir}フォルダが見つかりません。"
+        return False, f"Step 1, Error: {pretrained_dir} 폴더를 찾을 수 없습니다."
 
     with open(paths.config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
@@ -130,7 +130,7 @@ def initialize(
     with open("config.yml", "w", encoding="utf-8") as f:
         yaml.dump(yml_data, f, allow_unicode=True)
     logger.success("Step 1: initialization finished.")
-    return True, "Step 1, Success: 初期設定が完了しました"
+    return True, "Step 1, Success: 초기 설정이 완료되었습니다"
 
 
 def resample(model_name: str, normalize: bool, trim: bool, num_processes: int):
@@ -156,12 +156,12 @@ def resample(model_name: str, normalize: bool, trim: bool, num_processes: int):
     success, message = run_script_with_log(cmd)
     if not success:
         logger.error("Step 2: resampling failed.")
-        return False, f"Step 2, Error: 音声ファイルの前処理に失敗しました:\n{message}"
+        return False, f"Step 2, Error: 음성 파일 전처리에 실패했습니다:\n{message}"
     elif message:
         logger.warning("Step 2: resampling finished with stderr.")
-        return True, f"Step 2, Success: 音声ファイルの前処理が完了しました:\n{message}"
+        return True, f"Step 2, Success: 음성 파일 전처리가 완료되었습니다:\n{message}"
     logger.success("Step 2: resampling finished.")
-    return True, "Step 2, Success: 音声ファイルの前処理が完了しました"
+    return True, "Step 2, Success: 음성 파일 전처리가 완료되었습니다"
 
 
 def preprocess_text(
@@ -173,7 +173,7 @@ def preprocess_text(
         logger.error(f"Step 3: {paths.esd_path} not found.")
         return (
             False,
-            f"Step 3, Error: 書き起こしファイル {paths.esd_path} が見つかりません。",
+            f"Step 3, Error: 전사 파일 {paths.esd_path}을(를) 찾을 수 없습니다.",
         )
 
     cmd = [
@@ -199,16 +199,16 @@ def preprocess_text(
         logger.error("Step 3: preprocessing text failed.")
         return (
             False,
-            f"Step 3, Error: 書き起こしファイルの前処理に失敗しました:\n{message}",
+            f"Step 3, Error: 전사 파일 전처리에 실패했습니다:\n{message}",
         )
     elif message:
         logger.warning("Step 3: preprocessing text finished with stderr.")
         return (
             True,
-            f"Step 3, Success: 書き起こしファイルの前処理が完了しました:\n{message}",
+            f"Step 3, Success: 전사 파일 전처리가 완료되었습니다:\n{message}",
         )
     logger.success("Step 3: preprocessing text finished.")
-    return True, "Step 3, Success: 書き起こしファイルの前処理が完了しました"
+    return True, "Step 3, Success: 전사 파일 전처리가 완료되었습니다"
 
 
 def bert_gen(model_name: str):
@@ -219,15 +219,15 @@ def bert_gen(model_name: str):
     )
     if not success:
         logger.error("Step 4: bert_gen failed.")
-        return False, f"Step 4, Error: BERT特徴ファイルの生成に失敗しました:\n{message}"
+        return False, f"Step 4, Error: BERT 특징 파일 생성에 실패했습니다:\n{message}"
     elif message:
         logger.warning("Step 4: bert_gen finished with stderr.")
         return (
             True,
-            f"Step 4, Success: BERT特徴ファイルの生成が完了しました:\n{message}",
+            f"Step 4, Success: BERT 특징 파일 생성이 완료되었습니다:\n{message}",
         )
     logger.success("Step 4: bert_gen finished.")
-    return True, "Step 4, Success: BERT特徴ファイルの生成が完了しました"
+    return True, "Step 4, Success: BERT 특징 파일 생성이 완료되었습니다"
 
 
 def style_gen(model_name: str, num_processes: int):
@@ -246,16 +246,16 @@ def style_gen(model_name: str, num_processes: int):
         logger.error("Step 5: style_gen failed.")
         return (
             False,
-            f"Step 5, Error: スタイル特徴ファイルの生成に失敗しました:\n{message}",
+            f"Step 5, Error: 스타일 특징 파일 생성에 실패했습니다:\n{message}",
         )
     elif message:
         logger.warning("Step 5: style_gen finished with stderr.")
         return (
             True,
-            f"Step 5, Success: スタイル特徴ファイルの生成が完了しました:\n{message}",
+            f"Step 5, Success: 스타일 특징 파일 생성이 완료되었습니다:\n{message}",
         )
     logger.success("Step 5: style_gen finished.")
-    return True, "Step 5, Success: スタイル特徴ファイルの生成が完了しました"
+    return True, "Step 5, Success: 스타일 특징 파일 생성이 완료되었습니다"
 
 
 def preprocess_all(
@@ -277,7 +277,7 @@ def preprocess_all(
     yomi_error: str,
 ):
     if model_name == "":
-        return False, "Error: モデル名を入力してください"
+        return False, "Error: 모델명을 입력해 주세요"
     success, message = initialize(
         model_name=model_name,
         batch_size=batch_size,
@@ -321,7 +321,7 @@ def preprocess_all(
     logger.success("Success: All preprocess finished!")
     return (
         True,
-        "Success: 全ての前処理が完了しました。ターミナルを確認しておかしいところがないか確認するのをおすすめします。",
+        "Success: 모든 전처리가 완료되었습니다. 터미널을 확인해 이상한 부분이 없는지 확인하는 것을 권장합니다.",
     )
 
 
@@ -358,12 +358,12 @@ def train(
     success, message = run_script_with_log(cmd, ignore_warning=True)
     if not success:
         logger.error("Train failed.")
-        return False, f"Error: 学習に失敗しました:\n{message}"
+        return False, f"Error: 학습에 실패했습니다:\n{message}"
     elif message:
         logger.warning("Train finished with stderr.")
-        return True, f"Success: 学習が完了しました:\n{message}"
+        return True, f"Success: 학습이 완료되었습니다:\n{message}"
     logger.success("Train finished.")
-    return True, "Success: 学習が完了しました"
+    return True, "Success: 학습이 완료되었습니다"
 
 
 def wait_for_tensorboard(port: int = 6006, timeout: float = 10):
@@ -397,48 +397,48 @@ def run_tensorboard(model_name: str):
             stdout=SAFE_STDOUT,  # type: ignore
             stderr=SAFE_STDOUT,  # type: ignore
         )
-        yield gr.Button("起動中…")
+        yield gr.Button("실행 중…")
         if wait_for_tensorboard():
             tensorboard_executed = True
         else:
             logger.error("Tensorboard did not start in the expected time.")
     webbrowser.open("http://localhost:6006")
-    yield gr.Button("Tensorboardを開く")
+    yield gr.Button("Tensorboard 열기")
 
 
 change_log_md = """
-**Ver 2.5以降の変更点**
+**Ver 2.5 이후 변경점**
 
-- `raw/`フォルダの中で音声をサブディレクトリに分けて配置することで、自動的にスタイルが作成されるようになりました。詳細は下の「使い方/データの前準備」を参照してください。
-- これまでは1ファイルあたり14秒程度を超えた音声ファイルは学習には用いられていませんでしたが、Ver 2.5以降では「カスタムバッチサンプラーを無効化」にチェックを入れることでその制限が無しに学習できるようになりました（デフォルトはオフ）。ただし:
-    - 音声ファイルが長い場合の学習効率は悪いかもしれず、挙動も確認していません
-    - チェックを入れると要求VRAMがかなり増えるようので、学習に失敗したりVRAM不足になる場合は、バッチサイズを小さくするか、チェックを外してください
+- `raw/` 폴더 안에서 음성을 하위 디렉터리로 나눠 배치하면 자동으로 스타일이 생성되게 되었습니다. 자세한 내용은 아래 「사용법/데이터 사전 준비」를 참조해 주세요.
+- 지금까지는 1파일당 14초 정도를 넘는 음성 파일은 학습에 사용되지 않았지만, Ver 2.5 이후에는 「커스텀 배치 샘플러 비활성화」에 체크하면 그 제한 없이 학습할 수 있게 되었습니다 (기본값은 꺼짐). 다만:
+    - 음성 파일이 긴 경우 학습 효율은 나쁠 수 있으며, 동작도 확인되지 않았습니다
+    - 체크하면 요구 VRAM이 꽤 늘어나므로, 학습에 실패하거나 VRAM이 부족한 경우 배치 크기를 줄이거나 체크를 해제해 주세요
 """
 
 how_to_md = """
-## 使い方
+## 사용법
 
-- データを準備して、モデル名を入力して、必要なら設定を調整してから、「自動前処理を実行」ボタンを押してください。進捗状況等はターミナルに表示されます。
+- 데이터를 준비하고, 모델명을 입력하고, 필요하면 설정을 조정한 뒤 「자동 전처리 실행」 버튼을 눌러 주세요. 진행 상황 등은 터미널에 표시됩니다.
 
-- 各ステップごとに実行する場合は「手動前処理」を使ってください（基本的には自動でいいはず）。
+- 각 단계를 개별적으로 실행하려면 「수동 전처리」를 사용해 주세요 (기본적으로는 자동이면 충분합니다).
 
-- 前処理が終わったら、「学習を開始する」ボタンを押すと学習が開始されます。
+- 전처리가 끝나면 「학습 시작」 버튼을 누르면 학습이 시작됩니다.
 
-- 途中から学習を再開する場合は、モデル名を入力してから「学習を開始する」を押せばよいです。
+- 도중부터 학습을 재개하는 경우, 모델명을 입력한 뒤 「학습 시작」을 누르면 됩니다.
 
-## JP-Extra版について
+## JP-Extra판에 대하여
 
-元とするモデル構造として [Bert-VITS2 Japanese-Extra](https://github.com/fishaudio/Bert-VITS2/releases/tag/JP-Exta) を使うことができます。
-日本語のアクセントやイントネーションや自然性が上がる傾向にありますが、英語と中国語は話せなくなります。
+기반 모델 구조로 [Bert-VITS2 Japanese-Extra](https://github.com/fishaudio/Bert-VITS2/releases/tag/JP-Exta)를 사용할 수 있습니다.
+일본어·한국어의 악센트나 억양, 자연스러움이 좋아지는 경향이 있지만, 영어와 중국어는 말할 수 없게 됩니다.
 """
 
 prepare_md = """
-まず音声データと、書き起こしテキストを用意してください。
+먼저 음성 데이터와 전사 텍스트를 준비해 주세요.
 
-それを次のように配置します。
+이를 다음과 같이 배치합니다.
 ```
 ├── Data/
-│   ├── {モデルの名前}
+│   ├── {모델 이름}
 │   │   ├── esd.list
 │   │   ├── raw/
 │   │   │   ├── foo.wav
@@ -452,294 +452,296 @@ prepare_md = """
 ...
 ```
 
-### 配置の仕方
-- 上のように配置すると、`style1/`と`style2/`フォルダの内部（直下以外も含む）に入っている音声ファイルたちから、自動的にデフォルトスタイルに加えて`style1`と`style2`というスタイルが作成されます
-- 特にスタイルを作る必要がない場合や、スタイル分類機能等でスタイルを作る場合は、`raw/`フォルダ直下に全てを配置してください。このように`raw/`のサブディレクトリの個数が0または1の場合は、スタイルはデフォルトスタイルのみが作成されます。
-- 音声ファイルのフォーマットはwav形式以外にもmp3等の多くの音声ファイルに対応しています
+### 배치 방법
+- 위와 같이 배치하면 `style1/`과 `style2/` 폴더 내부 (바로 아래 외의 위치 포함)에 들어 있는 음성 파일들로부터, 기본 스타일에 더해 `style1`과 `style2`라는 스타일이 자동으로 생성됩니다
+- 딱히 스타일을 만들 필요가 없거나 스타일 분류 기능 등으로 스타일을 만드는 경우, `raw/` 폴더 바로 아래에 전부 배치해 주세요. 이렇게 `raw/`의 하위 디렉터리 개수가 0 또는 1인 경우, 스타일은 기본 스타일만 생성됩니다.
+- 음성 파일 포맷은 wav 형식 외에도 mp3 등 다양한 음성 파일에 대응합니다
 
-### 書き起こしファイル`esd.list`
+### 전사 파일 `esd.list`
 
-`Data/{モデルの名前}/esd.list` ファイルには、以下のフォーマットで各音声ファイルの情報を記述してください。
+`Data/{모델 이름}/esd.list` 파일에는 다음 포맷으로 각 음성 파일의 정보를 기술해 주세요.
 
 
 ```
-path/to/audio.wav(wavファイル以外でもこう書く)|{話者名}|{言語ID、ZHかJPかEN}|{書き起こしテキスト}
+path/to/audio.wav(wav 파일이 아니어도 이렇게 기재)|{화자명}|{언어 ID, ZH·JP·EN·KO 중 하나}|{전사 텍스트}
 ```
 
-- ここで、最初の`path/to/audio.wav`は、`raw/`からの相対パスです。つまり、`raw/foo.wav`の場合は`foo.wav`、`raw/style1/bar.wav`の場合は`style1/bar.wav`となります。
-- 拡張子がwavでない場合でも、`esd.list`には`wav`と書いてください、つまり、`raw/bar.mp3`の場合でも`bar.wav`と書いてください。
+- 여기서 첫 번째 `path/to/audio.wav`는 `raw/` 기준 상대 경로입니다. 즉 `raw/foo.wav`의 경우 `foo.wav`, `raw/style1/bar.wav`의 경우 `style1/bar.wav`가 됩니다.
+- 확장자가 wav가 아닌 경우에도 `esd.list`에는 `wav`로 적어 주세요. 즉 `raw/bar.mp3`의 경우에도 `bar.wav`로 적어 주세요.
 
 
-例：
+예:
 ```
-foo.wav|hanako|JP|こんにちは、元気ですか？
-bar.wav|taro|JP|はい、聞こえています……。何か用ですか？
-style1/baz.wav|hanako|JP|今日はいい天気ですね。
-style1/qux.wav|taro|JP|はい、そうですね。
+foo.wav|hanako|KO|안녕하세요, 잘 지내세요?
+bar.wav|taro|KO|네, 들리고 있어요……. 무슨 일이세요?
+style1/baz.wav|hanako|KO|오늘은 날씨가 좋네요.
+style1/qux.wav|taro|KO|네, 그러네요.
 ...
 english_teacher.wav|Mary|EN|How are you? I'm fine, thank you, and you?
 ...
 ```
-もちろん日本語話者の単一話者データセットでも構いません。
+물론 한국어 화자의 단일 화자 데이터셋이어도 상관없습니다.
 """
 
 
 def create_train_app():
     with gr.Blocks(theme=GRADIO_THEME).queue() as app:
         gr.Markdown(change_log_md)
-        with gr.Accordion("使い方", open=False):
+        with gr.Accordion("사용법", open=False):
             gr.Markdown(how_to_md)
-            with gr.Accordion(label="データの前準備", open=False):
+            with gr.Accordion(label="데이터 사전 준비", open=False):
                 gr.Markdown(prepare_md)
-        model_name = gr.Textbox(label="モデル名")
-        gr.Markdown("### 自動前処理")
+        model_name = gr.Textbox(label="모델명")
+        gr.Markdown("### 자동 전처리")
         with gr.Row(variant="panel"):
             with gr.Column():
                 use_jp_extra = gr.Checkbox(
-                    label="JP-Extra版を使う（日本語の性能が上がるが英語と中国語は話せなくなる）",
+                    label="JP-Extra판 사용 (일본어·한국어 성능이 좋아지지만 영어와 중국어는 말할 수 없게 됨. 한국어 학습에서는 켜는 것을 권장)",
                     value=True,
                 )
                 batch_size = gr.Slider(
-                    label="バッチサイズ",
-                    info="学習速度が遅い場合は小さくして試し、VRAMに余裕があれば大きくしてください。JP-Extra版でのVRAM使用量目安: 1: 6GB, 2: 8GB, 3: 10GB, 4: 12GB",
+                    label="배치 크기",
+                    info="학습 속도가 느리면 줄여서 시도하고, VRAM에 여유가 있으면 늘려 주세요. JP-Extra판 VRAM 사용량 기준: 1: 6GB, 2: 8GB, 3: 10GB, 4: 12GB",
                     value=2,
                     minimum=1,
                     maximum=64,
                     step=1,
                 )
                 epochs = gr.Slider(
-                    label="エポック数",
-                    info="100もあれば十分そうだけどもっと回すと質が上がるかもしれない",
+                    label="에포크 수",
+                    info="100이면 충분해 보이지만 더 돌리면 품질이 좋아질 수도 있음",
                     value=100,
                     minimum=10,
                     maximum=1000,
                     step=10,
                 )
                 save_every_steps = gr.Slider(
-                    label="何ステップごとに結果を保存するか",
-                    info="エポック数とは違うことに注意",
+                    label="몇 스텝마다 결과를 저장할지",
+                    info="에포크 수와는 다르다는 점에 주의",
                     value=1000,
                     minimum=100,
                     maximum=10000,
                     step=100,
                 )
                 normalize = gr.Checkbox(
-                    label="音声の音量を正規化する(音量の大小が揃っていない場合など)",
+                    label="음성 볼륨을 정규화 (볼륨 크기가 고르지 않은 경우 등)",
                     value=False,
                 )
                 trim = gr.Checkbox(
-                    label="音声の最初と最後の無音を取り除く",
+                    label="음성 앞뒤의 무음을 제거",
                     value=False,
                 )
                 yomi_error = gr.Radio(
-                    label="書き起こしが読めないファイルの扱い",
+                    label="전사를 읽을 수 없는 파일의 처리",
                     choices=[
-                        ("エラー出たらテキスト前処理が終わった時点で中断", "raise"),
-                        ("読めないファイルは使わず続行", "skip"),
-                        ("読めないファイルも無理やり読んで学習に使う", "use"),
+                        ("에러가 나면 텍스트 전처리가 끝난 시점에 중단", "raise"),
+                        ("읽을 수 없는 파일은 사용하지 않고 계속", "skip"),
+                        ("읽을 수 없는 파일도 억지로 읽어 학습에 사용", "use"),
                     ],
                     value="skip",
                 )
-                with gr.Accordion("詳細設定", open=False):
+                with gr.Accordion("상세 설정", open=False):
                     num_processes = gr.Slider(
-                        label="プロセス数",
-                        info="前処理時の並列処理プロセス数、前処理でフリーズしたら下げてください",
+                        label="프로세스 수",
+                        info="전처리 시 병렬 처리 프로세스 수. 전처리 중 멈추면 낮춰 주세요",
                         value=cpu_count() // 2,
                         minimum=1,
                         maximum=cpu_count(),
                         step=1,
                     )
                     val_per_lang = gr.Slider(
-                        label="検証データ数",
-                        info="学習には使われず、tensorboardで元音声と合成音声を比較するためのもの",
+                        label="검증 데이터 수",
+                        info="학습에는 사용되지 않고, tensorboard에서 원본 음성과 합성 음성을 비교하기 위한 것",
                         value=0,
                         minimum=0,
                         maximum=100,
                         step=1,
                     )
                     log_interval = gr.Slider(
-                        label="Tensorboardのログ出力間隔",
-                        info="Tensorboardで詳しく見たい人は小さめにしてください",
+                        label="Tensorboard 로그 출력 간격",
+                        info="Tensorboard에서 자세히 보고 싶은 경우 작게 해 주세요",
                         value=200,
                         minimum=10,
                         maximum=1000,
                         step=10,
                     )
-                    gr.Markdown("学習時に特定の部分を凍結させるかどうか")
+                    gr.Markdown("학습 시 특정 부분을 고정(freeze)할지 여부")
                     freeze_EN_bert = gr.Checkbox(
-                        label="英語bert部分を凍結",
+                        label="영어 bert 부분을 고정",
                         value=False,
                     )
                     freeze_JP_bert = gr.Checkbox(
-                        label="日本語bert部分を凍結",
+                        label="일본어 bert 부분을 고정",
+                        info="한국어는 JP-Extra의 단일 BERT 슬롯을 공유하므로, 한국어 bert 부분도 이걸로 고정됩니다",
                         value=False,
                     )
                     freeze_ZH_bert = gr.Checkbox(
-                        label="中国語bert部分を凍結",
+                        label="중국어 bert 부분을 고정",
                         value=False,
                     )
                     freeze_style = gr.Checkbox(
-                        label="スタイル部分を凍結",
+                        label="스타일 부분을 고정",
                         value=False,
                     )
                     freeze_decoder = gr.Checkbox(
-                        label="デコーダ部分を凍結",
+                        label="디코더 부분을 고정",
                         value=False,
                     )
 
             with gr.Column():
                 preprocess_button = gr.Button(
-                    value="自動前処理を実行", variant="primary"
+                    value="자동 전처리 실행", variant="primary"
                 )
-                info_all = gr.Textbox(label="状況")
-        with gr.Accordion(open=False, label="手動前処理"):
+                info_all = gr.Textbox(label="상황")
+        with gr.Accordion(open=False, label="수동 전처리"):
             with gr.Row(variant="panel"):
                 with gr.Column():
-                    gr.Markdown(value="#### Step 1: 設定ファイルの生成")
+                    gr.Markdown(value="#### Step 1: 설정 파일 생성")
                     use_jp_extra_manual = gr.Checkbox(
-                        label="JP-Extra版を使う",
+                        label="JP-Extra판 사용",
                         value=True,
                     )
                     batch_size_manual = gr.Slider(
-                        label="バッチサイズ",
+                        label="배치 크기",
                         value=2,
                         minimum=1,
                         maximum=64,
                         step=1,
                     )
                     epochs_manual = gr.Slider(
-                        label="エポック数",
+                        label="에포크 수",
                         value=100,
                         minimum=1,
                         maximum=1000,
                         step=1,
                     )
                     save_every_steps_manual = gr.Slider(
-                        label="何ステップごとに結果を保存するか",
+                        label="몇 스텝마다 결과를 저장할지",
                         value=1000,
                         minimum=100,
                         maximum=10000,
                         step=100,
                     )
                     log_interval_manual = gr.Slider(
-                        label="Tensorboardのログ出力間隔",
+                        label="Tensorboard 로그 출력 간격",
                         value=200,
                         minimum=10,
                         maximum=1000,
                         step=10,
                     )
                     freeze_EN_bert_manual = gr.Checkbox(
-                        label="英語bert部分を凍結",
+                        label="영어 bert 부분을 고정",
                         value=False,
                     )
                     freeze_JP_bert_manual = gr.Checkbox(
-                        label="日本語bert部分を凍結",
+                        label="일본어 bert 부분을 고정",
+                        info="한국어는 JP-Extra의 단일 BERT 슬롯을 공유하므로, 한국어 bert 부분도 이걸로 고정됩니다",
                         value=False,
                     )
                     freeze_ZH_bert_manual = gr.Checkbox(
-                        label="中国語bert部分を凍結",
+                        label="중국어 bert 부분을 고정",
                         value=False,
                     )
                     freeze_style_manual = gr.Checkbox(
-                        label="スタイル部分を凍結",
+                        label="스타일 부분을 고정",
                         value=False,
                     )
                     freeze_decoder_manual = gr.Checkbox(
-                        label="デコーダ部分を凍結",
+                        label="디코더 부분을 고정",
                         value=False,
                     )
                 with gr.Column():
-                    generate_config_btn = gr.Button(value="実行", variant="primary")
-                    info_init = gr.Textbox(label="状況")
+                    generate_config_btn = gr.Button(value="실행", variant="primary")
+                    info_init = gr.Textbox(label="상황")
             with gr.Row(variant="panel"):
                 with gr.Column():
-                    gr.Markdown(value="#### Step 2: 音声ファイルの前処理")
+                    gr.Markdown(value="#### Step 2: 음성 파일 전처리")
                     num_processes_resample = gr.Slider(
-                        label="プロセス数",
+                        label="프로세스 수",
                         value=cpu_count() // 2,
                         minimum=1,
                         maximum=cpu_count(),
                         step=1,
                     )
                     normalize_resample = gr.Checkbox(
-                        label="音声の音量を正規化する",
+                        label="음성 볼륨을 정규화",
                         value=False,
                     )
                     trim_resample = gr.Checkbox(
-                        label="音声の最初と最後の無音を取り除く",
+                        label="음성 앞뒤의 무음을 제거",
                         value=False,
                     )
                 with gr.Column():
-                    resample_btn = gr.Button(value="実行", variant="primary")
-                    info_resample = gr.Textbox(label="状況")
+                    resample_btn = gr.Button(value="실행", variant="primary")
+                    info_resample = gr.Textbox(label="상황")
             with gr.Row(variant="panel"):
                 with gr.Column():
-                    gr.Markdown(value="#### Step 3: 書き起こしファイルの前処理")
+                    gr.Markdown(value="#### Step 3: 전사 파일 전처리")
                     val_per_lang_manual = gr.Slider(
-                        label="検証データ数",
+                        label="검증 데이터 수",
                         value=0,
                         minimum=0,
                         maximum=100,
                         step=1,
                     )
                     yomi_error_manual = gr.Radio(
-                        label="書き起こしが読めないファイルの扱い",
+                        label="전사를 읽을 수 없는 파일의 처리",
                         choices=[
-                            ("エラー出たらテキスト前処理が終わった時点で中断", "raise"),
-                            ("読めないファイルは使わず続行", "skip"),
-                            ("読めないファイルも無理やり読んで学習に使う", "use"),
+                            ("에러가 나면 텍스트 전처리가 끝난 시점에 중단", "raise"),
+                            ("읽을 수 없는 파일은 사용하지 않고 계속", "skip"),
+                            ("읽을 수 없는 파일도 억지로 읽어 학습에 사용", "use"),
                         ],
                         value="raise",
                     )
                 with gr.Column():
-                    preprocess_text_btn = gr.Button(value="実行", variant="primary")
-                    info_preprocess_text = gr.Textbox(label="状況")
+                    preprocess_text_btn = gr.Button(value="실행", variant="primary")
+                    info_preprocess_text = gr.Textbox(label="상황")
             with gr.Row(variant="panel"):
                 with gr.Column():
-                    gr.Markdown(value="#### Step 4: BERT特徴ファイルの生成")
+                    gr.Markdown(value="#### Step 4: BERT 특징 파일 생성")
                 with gr.Column():
-                    bert_gen_btn = gr.Button(value="実行", variant="primary")
-                    info_bert = gr.Textbox(label="状況")
+                    bert_gen_btn = gr.Button(value="실행", variant="primary")
+                    info_bert = gr.Textbox(label="상황")
             with gr.Row(variant="panel"):
                 with gr.Column():
-                    gr.Markdown(value="#### Step 5: スタイル特徴ファイルの生成")
+                    gr.Markdown(value="#### Step 5: 스타일 특징 파일 생성")
                     num_processes_style = gr.Slider(
-                        label="プロセス数",
+                        label="프로세스 수",
                         value=cpu_count() // 2,
                         minimum=1,
                         maximum=cpu_count(),
                         step=1,
                     )
                 with gr.Column():
-                    style_gen_btn = gr.Button(value="実行", variant="primary")
-                    info_style = gr.Textbox(label="状況")
-        gr.Markdown("## 学習")
+                    style_gen_btn = gr.Button(value="실행", variant="primary")
+                    info_style = gr.Textbox(label="상황")
+        gr.Markdown("## 학습")
         with gr.Row():
             skip_style = gr.Checkbox(
-                label="スタイルファイルの生成をスキップする",
-                info="学習再開の場合の場合はチェックしてください",
+                label="스타일 파일 생성을 건너뜀",
+                info="학습을 재개하는 경우 체크해 주세요",
                 value=False,
             )
             use_jp_extra_train = gr.Checkbox(
-                label="JP-Extra版を使う",
+                label="JP-Extra판 사용",
                 value=True,
             )
             not_use_custom_batch_sampler = gr.Checkbox(
-                label="カスタムバッチサンプラーを無効化",
-                info="VRAMに余裕がある場合にチェックすると、長い音声ファイルも学習に使われるようになります",
+                label="커스텀 배치 샘플러 비활성화",
+                info="VRAM에 여유가 있는 경우 체크하면 긴 음성 파일도 학습에 사용됩니다",
                 value=False,
             )
             speedup = gr.Checkbox(
-                label="ログ等をスキップして学習を高速化する",
+                label="로그 등을 건너뛰어 학습을 고속화",
                 value=False,
                 visible=False,  # Experimental
             )
-            train_btn = gr.Button(value="学習を開始する", variant="primary")
-            tensorboard_btn = gr.Button(value="Tensorboardを開く")
+            train_btn = gr.Button(value="학습 시작", variant="primary")
+            tensorboard_btn = gr.Button(value="Tensorboard 열기")
         gr.Markdown(
-            "進捗はターミナルで確認してください。結果は指定したステップごとに随時保存されており、また学習を途中から再開することもできます。学習を終了するには単にターミナルを終了してください。"
+            "진행 상황은 터미널에서 확인해 주세요. 결과는 지정한 스텝마다 수시로 저장되며, 학습을 도중부터 재개할 수도 있습니다. 학습을 종료하려면 그냥 터미널을 종료하면 됩니다."
         )
-        info_train = gr.Textbox(label="状況")
+        info_train = gr.Textbox(label="상황")
 
         preprocess_button.click(
             second_elem_of(preprocess_all),

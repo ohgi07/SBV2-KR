@@ -151,8 +151,13 @@ def get_text(
         bert = torch.zeros(1024, len(phone))
         ja_bert = torch.zeros(1024, len(phone))
         en_bert = bert_ori
+    elif language_str == Languages.KO:
+        # 韓国語は JP-Extra 系アーキテクチャ (単一 BERT 入力 = ja_bert スロット) を利用する
+        bert = torch.zeros(1024, len(phone))
+        ja_bert = bert_ori
+        en_bert = torch.zeros(1024, len(phone))
     else:
-        raise ValueError("language_str should be ZH, JP or EN")
+        raise ValueError("language_str should be ZH, JP, EN or KO")
 
     assert bert.shape[-1] == len(
         phone
