@@ -864,16 +864,23 @@ class TestWarmStartMap:
         assert NUM_BASE_SYMBOLS == 112
 
     def test_확정_매핑_스팟체크(self):
-        # 스펙 확정 테이블의 대표값 회귀망 (2026-07-22 확정)
+        # 스펙 확정 테이블의 대표값 회귀망
         from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
 
         assert KO_JP_INIT_MAP["ᄅ"] == [("r", 1.0)]
         assert KO_JP_INIT_MAP["ᅥ"] == [("o", 1.0)]
         assert KO_JP_INIT_MAP["ᅳ"] == [("u", 1.0)]
-        assert KO_JP_INIT_MAP["ᅣ"] == [("y", 0.3), ("a", 0.7)]
-        assert KO_JP_INIT_MAP["ᄉ"] == [("s", 0.8), ("sh", 0.2)]
+        assert KO_JP_INIT_MAP["ᄀ"] == [("g", 1.0)]
+        assert KO_JP_INIT_MAP["ᄁ"] == [("k", 0.95), ("g", 0.05)]
+        assert KO_JP_INIT_MAP["ᄉ"] == [("s", 0.75), ("sh", 0.25)]
+        assert KO_JP_INIT_MAP["ᄊ"] == [("s", 0.85), ("sh", 0.15)]
+        assert KO_JP_INIT_MAP["ᅣ"] == [("y", 0.35), ("a", 0.65)]
+        assert KO_JP_INIT_MAP["ᅩ"] == [("o", 0.85), ("u", 0.15)]
+        assert KO_JP_INIT_MAP["ᅯ"] == [("w", 0.2), ("o", 0.8)]
+        assert KO_JP_INIT_MAP["ᆫ"] == [("N", 0.85), ("n", 0.15)]
+        assert KO_JP_INIT_MAP["ᆷ"] == [("N", 0.7), ("m", 0.3)]
         assert KO_JP_INIT_MAP["ᆼ"] == [("N", 1.0)]
-        assert KO_JP_INIT_MAP["ᆨ"] == [("q", 1.0)]
+        assert KO_JP_INIT_MAP["ᆨ"] == [("q", 0.9), ("k", 0.1)]
 
 
 class TestBuildEmbedding:
@@ -893,7 +900,7 @@ class TestBuildEmbedding:
         assert torch.equal(out[:5], base)
 
     def test_단일_매핑은_소스와_정확히_일치(self):
-        # identity 테스트: w=1.0이면 비트 단위로 동일해야 함 (인덱스 어긋남 회귀망)
+        # w=1.0이면 소스 행과 비트 단위로 동일해야 함
         import torch
         from style_bert_vits2.nlp.korean.warm_start import build_embedding
 

@@ -44,13 +44,10 @@ def convert(input_path: Path, output_path: Path) -> None:
     if num_rows != NUM_BASE_SYMBOLS:
         raise ValueError(f"{EMB_KEY} 행수가 베이스({NUM_BASE_SYMBOLS})와 다릅니다: {num_rows}")
 
-    # 음소: KO 46행을 매핑 가중 결합으로
     tensors[EMB_KEY] = build_embedding(tensors[EMB_KEY], len(SYMBOLS), KO_PHONEME_INIT_MAP)  # fmt: skip
-    # 톤: KO 행 = JP low·high 평균
     jp_tone = LANGUAGE_TONE_START_MAP["JP"]
     tone_map = {LANGUAGE_TONE_START_MAP["KO"]: [(jp_tone, 0.5), (jp_tone + 1, 0.5)]}
     tensors[TONE_KEY] = build_embedding(tensors[TONE_KEY], NUM_TONES, tone_map)
-    # 언어: KO 행 = JP 행 복사
     lang_map = {LANGUAGE_ID_MAP["KO"]: [(LANGUAGE_ID_MAP["JP"], 1.0)]}
     tensors[LANG_KEY] = build_embedding(tensors[LANG_KEY], NUM_LANGUAGES, lang_map)
 
