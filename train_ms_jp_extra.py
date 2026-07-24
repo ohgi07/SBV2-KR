@@ -62,7 +62,9 @@ def backup_to_hf(repo_id: str, upload_assets: bool = True, blocking: bool = Fals
 
     Uploads run in the background (sequentially, on HfApi's internal worker thread);
     each finished upload is reported as a single log line with its commit URL
-    instead of per-file progress bars.
+    instead of per-file progress bars. After the uploads, the repo history is
+    squashed into a single commit so only the latest backup is stored (old
+    checkpoint blobs in the git history would otherwise blow up the repo storage).
     """
 
     def log_result(name: str):
@@ -74,6 +76,21 @@ def backup_to_hf(repo_id: str, upload_assets: bool = True, blocking: bool = Fals
                 logger.info(f"HF backup: {name} -> {future.result().commit_url}")
 
         return callback
+
+    def squash_history(future):
+        if future.exception() is not None:
+            return  # Upload failed (already logged); keep the previous backup intact
+        try:
+            api.super_squash_history(repo_id=repo_id)
+            # Squashing only unreferences old blobs; they still count toward storage
+            # until explicitly deleted, so drop LFS files the current tree no longer uses
+            tree_shas = {f.lfs.sha256 for f in api.list_repo_tree(repo_id, recursive=True) if getattr(f, "lfs", None)}
+            stale = [f for f in api.list_lfs_files(repo_id) if f.file_oid not in tree_shas]
+            if stale:
+                api.permanently_delete_lfs_files(repo_id, stale)
+            logger.info(f"HF backup: history squashed, {len(stale)} stale LFS files deleted")
+        except Exception as e:
+            logger.error(f"HF backup: failed to squash history: {e}")
 
     futures = []
     future = api.upload_folder(
@@ -95,6 +112,7 @@ def backup_to_hf(repo_id: str, upload_assets: bool = True, blocking: bool = Fals
         )
         future.add_done_callback(log_result(f"model_assets/{config.model_name}"))
         futures.append(future)
+    futures[-1].add_done_callback(squash_history)
     if blocking:
         for future in futures:
             try:
