@@ -38,9 +38,10 @@ def __to_pronunciation(norm_text: str) -> str:
     출력은 입력과 같은 문자 수이며, 한글 이외 문자의 위치는 변하지 않음이 보장된다.
     """
     # 형태소 정보에 기반한 보정 (예외 사전·ㄴ첨가·의→에·형태소 경계의 경음화)
-    from style_bert_vits2.nlp.korean.morph import apply_morph_rules
+    from style_bert_vits2.nlp.korean.morph import apply_morph_rules, clause_boundary_spaces
 
-    return pronounce(apply_morph_rules(norm_text))
+    # 절 경계는 보정 전 원문으로 판정한다. 보정이 문자 수를 보존하므로 인덱스는 그대로 맞는다
+    return pronounce(apply_morph_rules(norm_text), pause_positions=clause_boundary_spaces(norm_text))
 
 
 def __syllable_to_phones(syllable: str) -> list[str]:

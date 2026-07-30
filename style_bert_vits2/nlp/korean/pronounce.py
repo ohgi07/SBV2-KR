@@ -366,12 +366,15 @@ def __apply_word_boundary(left: str, right: str) -> tuple[str, str]:
     return left, right
 
 
-def pronounce(text: str) -> str:
+def pronounce(text: str, pause_positions: frozenset[int] = frozenset()) -> str:
     """
     임의의 텍스트 안의 한글 음절열 (공백·문장 기호로 구분되는 단위별)을 발음형으로 변환한다.
     공백 하나로 인접한 어절 쌍에는 어절 경계 음운 규칙 (연음·격음화·경음화·
     비음화·유음화)도 적용된다. 문장 기호 등 공백 이외의 경계에서는 적용되지 않는다 (휴지).
     한글 이외의 문자는 위치·내용 모두 그대로 유지되며, 문자열 길이는 반드시 일치한다.
+
+    pause_positions는 휴지로 볼 공백의 문자 인덱스다. 절 경계처럼 형태소 정보가
+    있어야 아는 휴지를 바깥에서 알려주기 위한 것으로, g2p.py의 발음 변환 경로가 넘긴다.
     """
     # (is_hangul_word, segment) 리스트로 분할하고, 어절별로 내부 규칙을 적용
     segments: list[list] = []
@@ -388,7 +391,12 @@ def pronounce(text: str) -> str:
         segments.append([True, pronounce_word("".join(word_buffer))])
 
     # 어절 경계 규칙: 공백 정확히 하나로 인접한 어절 쌍에 왼쪽부터 순서대로 적용
+    # 규칙은 음절 수를 보존하므로 누적 길이가 곧 그 공백의 문자 위치가 된다
+    space_at = 0
     for i in range(len(segments) - 2):
+        space_at += len(segments[i][1])
+        if space_at in pause_positions:
+            continue
         if segments[i][0] and not segments[i + 1][0] and segments[i + 1][1] == " " and segments[i + 2][0]:  # fmt: skip
             left_word, right_word = segments[i][1], segments[i + 2][1]
             new_left, new_right = __apply_word_boundary(left_word[-1], right_word[0])

@@ -860,6 +860,52 @@ class TestWordBoundaryRules:
         assert self._pron("그 일") == "그 일"
 
 
+class TestClauseBoundary:
+    """
+    절 경계 (연결어미·종결어미 뒤) 에서 어절 경계 규칙이 멈추는지 검증.
+    적용되면 "안 됩니다"가 [난 됨니다], "알려 줘"가 [날려 줘]로 나가 뜻이 바뀐다.
+    형태소 정보가 필요하므로 pronounce 단독이 아닌 g2p 경로로 확인한다.
+    """
+
+    def _pron(self, text: str) -> str:
+        import style_bert_vits2.nlp.korean.g2p as g2p_mod
+
+        return getattr(g2p_mod, "__to_pronunciation")(text)
+
+    def test_no_liaison_across_connective_ending(self):
+        assert self._pron("이곳에 들어오시면 안 됩니다") == "이고세 드러오시면 안 됨니다"
+        assert self._pron("도착하면 알려 줘") == "도차카면 알려 줘"
+        assert self._pron("길을 건너면 은행이 있어요") == "기를 건너면 은행이 이써요"
+
+    def test_no_tensification_across_connective_ending(self):
+        # 경음화도 절 경계를 넘지 않는다 (조심 → [쪼심] 방지)
+        assert self._pron("발생하지 않도록 조심해라") == "발생하지 안토록 조심해라"
+
+    def test_no_n_insertion_across_connective_ending(self):
+        # ㄴ 첨가도 절 경계를 넘지 않는다 (여덟 → [녀덜] 방지)
+        assert self._pron("깎아 주시면 여덟 개") == "까까 주시면 여덜 개"
+
+    def test_rules_still_apply_after_adnominal_ending(self):
+        # 관형사형 어미는 뒤 명사와 한 마디이므로 제29항 붙임2가 그대로 적용된다
+        assert self._pron("먹은 엿") == "머근 녇"
+        assert self._pron("할 일") == "할 릴"
+        assert self._pron("먹을 엿") == "머글 렫"
+
+    def test_rules_still_apply_without_ending(self):
+        # 체언·조사로 끝나는 어절 뒤는 절 경계가 아니므로 기존 동작 유지
+        assert self._pron("오늘 아침") == "오느 라침"
+        assert self._pron("삼 일") == "사 밀"
+        assert self._pron("옷 입다") == "온 닙따"
+
+    def test_word2ph_contract_preserved_at_clause_boundary(self):
+        from style_bert_vits2.nlp.korean.g2p import g2p
+
+        for text in ["도착하면 알려 줘", "발생하지 않도록 조심해라"]:
+            phones, _, word2ph = g2p(text)
+            assert len(word2ph) == len(text) + 2
+            assert sum(word2ph) == len(phones)
+
+
 # ============================================================
 # warm_start (KO 임베딩 초기화 매핑)
 # ============================================================

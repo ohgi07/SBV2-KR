@@ -178,6 +178,11 @@ __VERB_STEM_TAGS = {"VV", "VA", "VX", "VV-I", "VV-R", "VA-I", "VA-R"}
 # 어미의 태그
 __ENDING_TAGS = {"EC", "EF", "ETM", "ETN", "EP"}
 
+# 절을 끝맺는 어미. 이 뒤의 공백은 휴지이므로 어절 경계 규칙을 적용하지 않는다
+# ("들어오시면 안"이 [드러오시며 난]으로 나가는 것을 막는다). 관형사형 (ETM)·
+# 명사형 (ETN) 어미는 뒤 체언과 한 마디라 제외 — 먹은 엿[머근녇], 할 일[할릴].
+__CLAUSE_ENDING_TAGS = {"EC", "EF"}
+
 # kiwipiepy (선택 의존성)
 __kiwi_instance = None
 __kiwi_unavailable = False
@@ -223,6 +228,18 @@ def apply_exceptions(text: str) -> str:
         if orig in text:
             text = text.replace(orig, replaced)
     return text
+
+
+def clause_boundary_spaces(text: str) -> frozenset[int]:
+    """
+    연결어미·종결어미로 끝나는 어절 뒤 공백의 문자 인덱스 (pronounce()의 pause_positions용).
+    kiwipiepy가 없으면 빈 집합이라 어절 경계 규칙이 종전대로 전부 적용된다.
+    """
+    kiwi = get_kiwi()
+    if kiwi is None or " " not in text:
+        return frozenset()
+    ends = (t.end for t in kiwi.tokenize(text) if t.tag in __CLAUSE_ENDING_TAGS)
+    return frozenset(i for i in ends if text[i : i + 1] == " ")
 
 
 def __palatalize_d_hyeo(text: str) -> str:
