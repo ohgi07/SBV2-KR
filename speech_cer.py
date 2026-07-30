@@ -31,7 +31,7 @@ from tqdm import tqdm
 from config import get_path_config
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
-from style_bert_vits2.nlp.korean.cer import korean_cer
+from style_bert_vits2.nlp.korean.cer import drop_hallucinated_segments, korean_cer
 from style_bert_vits2.tts_model import TTSModel
 
 
@@ -52,6 +52,55 @@ test_texts = [
     "값비싼 보석을 잃어버려서 정말 속상해요!",
     "출발 시간은 1시 30분이니까 늦지 마세요.",
     "책상 위에 있던 꽃잎이 바람에 날아갔어요.",
+    ## 아래는 음운 현상별 묶음. CSV가 문장마다 열을 하나씩 쓰므로 이전 결과와 열을
+    ## 맞추려면 순서를 건드리지 말고 새 문장은 끝에만 추가한다.
+    # 연음 (옷을→오슬, 앞으로→아프로)
+    "옷을 입고 밖에 나갔어요.",
+    "꽃이 피었으니 앞으로 나와 보세요.",
+    "이 책을 읽어 볼 만한 가치가 있어요.",
+    # 경음화 (국밥집→국빱찝, 옷장→옫짱)
+    "학교 앞 국밥집에서 먹고 갈까요?",
+    "십 분 뒤에 출발할게요.",
+    "늦게까지 남아서 옷장을 정리했다.",
+    # 격음화 (축하→추카, 국화→구콰)
+    "축하합니다, 정말 자랑스럽네요!",
+    "그렇게 많이 좋아하는 줄은 몰랐어요.",
+    "국화꽃 한 송이를 놓고 왔다.",
+    # 비음화 (국립→궁닙, 밥물→밤물)
+    "작년에는 국립 박물관에 갔었다.",
+    "정답을 맞히는 것이 목표입니다.",
+    "밥물을 잘 맞춰야 밥맛이 좋다.",
+    # 유음화 (신라→실라, 권리→궐리)
+    "신라의 천년 고도 경주에 다녀왔다.",
+    "권리를 주장할 줄도 알아야 한다.",
+    "설날에는 온 가족이 한자리에 모입니다.",
+    # ㄴ 첨가 (색연필→생년필, 십육→심뉵)
+    "색연필로 그림을 그렸어요.",
+    "십육 년 만에 다시 만났다.",
+    "담요를 덮고 한여름 밤을 보냈다.",
+    # 구개음화 (굳이→구지, 해돋이→해도지)
+    "굳이 그렇게까지 할 필요가 있을까?",
+    "해돋이를 보러 새벽같이 나섰다.",
+    "미닫이문이 잘 열리지 않는다.",
+    # 겹받침 (밟고→밥꼬, 값을→갑쓸, 여덟→여덜)
+    "닭이 앉아 있던 흙을 밟고 지나갔다.",
+    "값을 깎아 주시면 여덟 개 살게요.",
+    "삶이 없다면 앎도 없다.",
+    # ㅎ 탈락 (낳은→나은, 싫어→시러)
+    "낳은 정보다 기른 정이 더 크다.",
+    "많은 사람이 싫어하는 일이다.",
+    # 수사 (스물세·열두는 고유어계, 2026년·15분은 한자어계)
+    "스물세 살에 처음 만나 열두 해를 함께했다.",
+    "2026년 7월 31일 오후 3시 15분에 도착합니다.",
+    "총액은 1,250,000원이고 할인율은 12.5퍼센트입니다.",
+    # 외래어
+    "카페에서 아메리카노 한 잔 주문했어요.",
+    "이메일 주소는 알파벳 소문자로 입력하세요.",
+    # 장문 — 끝까지 쉼과 억양이 유지되는지 본다
+    "어제 저녁에 친구를 만나서 오랜만에 이런저런 이야기를 나누다 보니, 어느새 자정이 훌쩍 넘어 버렸습니다.",
+    "이번 일에서 가장 중요한 것은 일정을 지키는 일이지만, 그보다 더 중요한 것은 결과물의 품질이라고 생각합니다.",
+    # 단문 — 짧으면 자모 하나 차이로도 CER이 크게 튄다
+    "네, 알겠습니다.",
 ]
 
 def load_train_texts(train_list_path: Path, num: int, seed: int) -> list[str]:
@@ -108,8 +157,9 @@ if __name__ == "__main__":
         whisper = WhisperModel(args.whisper_model, device=whisper_device)
 
     def transcribe_ko(wav_path: str) -> str:
-        segments, _ = whisper.transcribe(wav_path, language="ko", beam_size=1)
-        return "".join(segment.text for segment in segments)
+        # vad_filter는 환각을 줄일 뿐 없애지 못해 남은 것은 발화 속도로 걸러낸다
+        segments, _ = whisper.transcribe(wav_path, language="ko", beam_size=1, vad_filter=True)
+        return "".join(segment.text for segment in drop_hallucinated_segments(segments))
 
     model_path = path_config.assets_root / model_name
     safetensors_files = list(model_path.glob("*.safetensors"))

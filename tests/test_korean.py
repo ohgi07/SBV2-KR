@@ -697,6 +697,37 @@ class TestCER:
         assert korean_cer("", "") == 0.0
         assert korean_cer("...", "가나다") == 1.0
 
+
+class TestHallucinationFilter:
+    """Whisper 환각 세그먼트 제거 (실측 속도: 정상 4.24~8.33자/초, 환각 0.37~1.00자/초)"""
+
+    def _seg(self, start: float, end: float, text: str):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(start=start, end=end, text=text)
+
+    def test_drops_hallucination(self):
+        from style_bert_vits2.nlp.korean.cer import drop_hallucinated_segments
+
+        # 뒤의 둘은 문구가 서로 다르다 — 블랙리스트가 아니라 속도로 걸러야 둘 다 잡힌다
+        segs = [
+            self._seg(0.30, 3.98, "오래 쪼그리고 앉아 있었더니 다리에 쥐가 나요."),
+            self._seg(3.98, 33.96, "자막 제공 및 자막 제공 및 광고를 포함하고 있습니다."),
+            self._seg(0.00, 29.98, "한글자막 by 한효정"),
+        ]
+        assert [s.text for s in drop_hallucinated_segments(segs)] == [segs[0].text]
+
+    def test_keeps_real_speech(self):
+        from style_bert_vits2.nlp.korean.cer import drop_hallucinated_segments
+
+        segs = [
+            self._seg(0.00, 2.36, "삶은 달걀 있어요?"),
+            self._seg(2.36, 10.90, "어제 저녁에 친구를 만나서 이런저런 이야기를 나누다 보니 자정이 넘었습니다."),
+            self._seg(10.90, 12.40, "네."),  # 짧으면 속도가 낮아도 길이 조건에 걸리지 않는다
+        ]
+        assert len(drop_hallucinated_segments(segs)) == 3
+        assert drop_hallucinated_segments([]) == []
+
     def test_levenshtein(self):
         from style_bert_vits2.nlp.korean.cer import levenshtein
 

@@ -12,7 +12,8 @@ TTS 명료도 평가 (합성 음성 → ASR → 참조 텍스트와 비교)를 �
   음절 전체의 오류로 계산됨)
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from typing import TypeVar
 
 from style_bert_vits2.nlp.korean.morph import apply_morph_rules
 from style_bert_vits2.nlp.korean.normalizer import normalize_text
@@ -21,6 +22,30 @@ from style_bert_vits2.nlp.korean.pronounce import (
     is_hangul_syllable,
     pronounce,
 )
+
+
+_Segment = TypeVar("_Segment")
+
+
+def drop_hallucinated_segments(
+    segments: Iterable[_Segment], max_chars_per_sec: float = 2.0, min_duration_sec: float = 5.0
+) -> list[_Segment]:
+    """
+    ASR 세그먼트 중 환각을 제거한다 (start·end·text 속성만 사용).
+
+    Whisper는 짧은 음성 뒤에 무음이 이어지면 자막 상투구를 30초 윈도우 끝까지 늘여
+    출력한다. vad_filter로도 남기 때문에 사후에 걸러내야 하고, 하나만 섞여도 평균 CER이
+    몇 배로 뛴다. 문구 목록 대신 발화 속도로 판정하므로 처음 보는 상투구에도 통한다.
+    기본값은 실측 분포 (정상 4.24~8.33자/초, 환각 0.37~1.00자/초) 사이에서 잡았다.
+    짧은 구간은 속도가 낮아도 정상일 수 있어 길이 조건으로 보호한다.
+    """
+    kept = []
+    for segment in segments:
+        duration = segment.end - segment.start
+        if duration > min_duration_sec and len(segment.text.strip()) < max_chars_per_sec * duration:
+            continue
+        kept.append(segment)
+    return kept
 
 
 def levenshtein(a: Sequence, b: Sequence) -> int:
