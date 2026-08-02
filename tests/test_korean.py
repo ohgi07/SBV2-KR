@@ -326,6 +326,20 @@ class TestMorphRules:
         text = "맛있는 김치찌개와 솜이불, 갈 데가 없는 한여름의 서울역!"
         assert len(apply_morph_rules(text)) == len(text)
 
+    def test_shared_tokens_match_internal_analysis(self):
+        """분석 결과를 넘겨받아도 각자 분석할 때와 같은 결과여야 한다 (발화당 1회로 줄이는 경로)"""
+        pytest.importorskip("kiwipiepy")
+        from style_bert_vits2.nlp.korean.morph import (
+            apply_morph_rules,
+            clause_boundary_spaces,
+            tokenize,
+        )
+
+        text = "이곳에 들어오시면 안 됩니다. 갈 데가 없는 한여름의 서울역!"
+        tokens = tokenize(text)
+        assert apply_morph_rules(text, tokens) == apply_morph_rules(text)
+        assert clause_boundary_spaces(text, tokens) == clause_boundary_spaces(text)
+
 
 class TestCheckpointOptimizerCompat:
     """
@@ -700,6 +714,14 @@ class TestCER:
         assert korean_cer("", "") == 0.0
         assert korean_cer("...", "가나다") == 1.0
 
+    def test_uses_g2p_pronunciation_path(self):
+        """합성에 쓰인 것과 같은 발음으로 재야 한다 (절 경계에서 어절 경계 규칙이 멈춘 발음)"""
+        pytest.importorskip("kiwipiepy")
+        from style_bert_vits2.nlp.korean.cer import text_to_pronounced_units
+
+        units = text_to_pronounced_units("이곳에 들어오시면 안 됩니다", unit="syllable")
+        assert "".join(units) == "이고세드러오시면안됨니다"  # 절 경계를 무시하면 드러오시며난
+
 
 class TestHallucinationFilter:
     """Whisper 환각 세그먼트 제거 (실측 속도: 정상 4.24~8.33자/초, 환각 0.37~1.00자/초)"""
@@ -871,9 +893,9 @@ class TestClauseBoundary:
     """
 
     def _pron(self, text: str) -> str:
-        import style_bert_vits2.nlp.korean.g2p as g2p_mod
+        from style_bert_vits2.nlp.korean.g2p import to_pronunciation
 
-        return getattr(g2p_mod, "__to_pronunciation")(text)
+        return to_pronunciation(text)
 
     def test_no_liaison_across_connective_ending(self):
         assert self._pron("이곳에 들어오시면 안 됩니다") == "이고세 드러오시면 안 됨니다"

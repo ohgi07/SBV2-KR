@@ -4,6 +4,7 @@
 TTS 명료도 평가 (합성 음성 → ASR → 참조 텍스트와 비교)를 위한 모듈.
 정서법끼리 직접 비교하면 발음이 같아도 표기만 달라서 오류로 계산되어 버리므로
 (예: 참조 "맛있다" vs ASR 출력 "마싯따"), 양쪽 텍스트를 발음형으로 변환한 뒤 비교한다.
+변환은 g2p.to_pronunciation()을 쓴다 — 합성에 쓰인 것과 다른 발음으로 재면 지표가 어긋난다.
 
 - 숫자·기호는 정규화로 읽기 한글로 변환된다 (3개 vs 세 개 → 일치)
 - 공백·문장 기호는 비교에서 제외된다 (ASR 띄어쓰기의 흔들림을 무시)
@@ -15,20 +16,16 @@ TTS 명료도 평가 (합성 음성 → ASR → 참조 텍스트와 비교)를 �
 from collections.abc import Iterable, Sequence
 from typing import TypeVar
 
-from style_bert_vits2.nlp.korean.morph import apply_morph_rules
+from style_bert_vits2.nlp.korean.g2p import to_pronunciation
 from style_bert_vits2.nlp.korean.normalizer import normalize_text
-from style_bert_vits2.nlp.korean.pronounce import (
-    decompose,
-    is_hangul_syllable,
-    pronounce,
-)
+from style_bert_vits2.nlp.korean.pronounce import decompose, is_hangul_syllable
 
 
 _Segment = TypeVar("_Segment")
 
 
 def drop_hallucinated_segments(
-    segments: Iterable[_Segment], max_chars_per_sec: float = 2.0, min_duration_sec: float = 5.0
+    segments: Iterable[_Segment], min_chars_per_sec: float = 2.0, min_duration_sec: float = 5.0
 ) -> list[_Segment]:
     """
     ASR 세그먼트 중 환각을 제거한다 (start·end·text 속성만 사용).
@@ -42,7 +39,7 @@ def drop_hallucinated_segments(
     kept = []
     for segment in segments:
         duration = segment.end - segment.start
-        if duration > min_duration_sec and len(segment.text.strip()) < max_chars_per_sec * duration:
+        if duration > min_duration_sec and len(segment.text.strip()) < min_chars_per_sec * duration:
             continue
         kept.append(segment)
     return kept
@@ -76,8 +73,7 @@ def text_to_pronounced_units(text: str, unit: str = "jamo") -> list[str]:
         list[str]: 비교 단위 리스트 (공백·문장 기호는 포함되지 않음)
     """
     assert unit in ("jamo", "syllable")
-    norm = normalize_text(text)
-    pronounced = pronounce(apply_morph_rules(norm))
+    pronounced = to_pronunciation(normalize_text(text))
     syllables = [c for c in pronounced if is_hangul_syllable(c)]
     if unit == "syllable":
         return syllables

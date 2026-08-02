@@ -19,6 +19,8 @@ pronounce.py의 음운 규칙 엔진은 형태소 경계 정보가 필요한 규
 kiwipiepy가 없으면 예외 사전만 적용된다.
 """
 
+from typing import Any, Optional
+
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp.korean.pronounce import (
     TENSIFICATION_MAP,
@@ -212,6 +214,21 @@ def get_kiwi():
     return __kiwi_instance
 
 
+def tokenize(text: str) -> Optional[list[Any]]:
+    """
+    kiwipiepy 토큰열을 반환한다. 미설치거나 분석에 실패하면 None (= 형태소 규칙 없이 진행).
+    한 텍스트에 여러 규칙을 적용할 때는 이 결과를 아래 함수들에 넘겨 분석을 한 번만 돌린다.
+    """
+    kiwi = get_kiwi()
+    if kiwi is None:
+        return None
+    try:
+        return list(kiwi.tokenize(text))
+    except Exception as e:
+        logger.warning(f"kiwipiepy failed ({e}), skipping morphology-aware rules")
+        return None
+
+
 # 예외 사전 항목은 문자 수 보존이 필수 (word2ph 정렬이 깨지기 때문)
 # 사용자가 사전을 확장하는 것을 상정해, 임포트 시 한 번만 명시적으로 검증한다
 for __orig, __replaced in PRONUNCIATION_EXCEPTIONS.items():
@@ -230,15 +247,19 @@ def apply_exceptions(text: str) -> str:
     return text
 
 
-def clause_boundary_spaces(text: str) -> frozenset[int]:
+def clause_boundary_spaces(text: str, tokens: Optional[list[Any]] = None) -> frozenset[int]:
     """
     연결어미·종결어미로 끝나는 어절 뒤 공백의 문자 인덱스 (pronounce()의 pause_positions용).
     kiwipiepy가 없으면 빈 집합이라 어절 경계 규칙이 종전대로 전부 적용된다.
+    tokens를 주면 그 분석 결과를 쓰고, 없으면 여기서 분석한다.
     """
-    kiwi = get_kiwi()
-    if kiwi is None or " " not in text:
+    if " " not in text:
         return frozenset()
-    ends = (t.end for t in kiwi.tokenize(text) if t.tag in __CLAUSE_ENDING_TAGS)
+    if tokens is None:
+        tokens = tokenize(text)
+    if tokens is None:
+        return frozenset()
+    ends = (t.end for t in tokens if t.tag in __CLAUSE_ENDING_TAGS)
     return frozenset(i for i in ends if text[i : i + 1] == " ")
 
 
@@ -265,25 +286,21 @@ def __set_cho(char: str, new_cho: str) -> str:
     return compose(new_cho, jung, coda)
 
 
-def apply_morph_rules(text: str) -> str:
+def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
     """
     형태소 정보에 기반한 발음 보정을 텍스트에 적용한다.
     출력은 입력과 같은 문자 수임이 보장된다.
+    tokens를 주면 그 분석 결과를 쓰고, 없으면 여기서 분석한다 (반드시 원문 text의 분석이어야 한다).
     """
     original = text
     text = apply_exceptions(text)
     text = __palatalize_d_hyeo(text)
 
-    kiwi = get_kiwi()
-    if kiwi is None:
-        return text
-
     # 분석은 재작성 전 원문으로 한다 (재작성본 물똥이는 물똥 + 이로 갈린다).
     # 재작성이 문자 수를 보존하므로 인덱스는 그대로 맞는다
-    try:
-        tokens = list(kiwi.tokenize(original))
-    except Exception as e:
-        logger.warning(f"kiwipiepy failed ({e}), skipping morphology-aware rules")
+    if tokens is None:
+        tokens = tokenize(original)
+    if tokens is None:
         return text
 
     chars = list(text)

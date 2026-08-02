@@ -24,8 +24,7 @@ if __name__ == "__main__":
 
 import pytest
 
-import style_bert_vits2.nlp.korean.g2p as g2p_mod
-from style_bert_vits2.nlp.korean.g2p import g2p
+from style_bert_vits2.nlp.korean.g2p import g2p, to_pronunciation
 from style_bert_vits2.nlp.korean.normalizer import normalize_text
 from style_bert_vits2.nlp.symbols import KO_FINALS, PUNCTUATIONS, SYMBOLS
 
@@ -216,13 +215,9 @@ _add("어절 경계 ㄴ첨가 (§29 붙임2)", [
 # ============================================================
 # 評価対象の経路 (g2p() が使う実経路と同一)
 # ============================================================
-# g2p.py のモジュールプライベート関数 (発音変換の実経路)
-_to_pronunciation = getattr(g2p_mod, "__to_pronunciation")
-
-
 def _g2p_pron(text: str) -> str:
     """G2P 経路 (normalize → morph → pronounce)"""
-    return _to_pronunciation(normalize_text(text))
+    return to_pronunciation(normalize_text(text))
 
 
 def _params() -> list:

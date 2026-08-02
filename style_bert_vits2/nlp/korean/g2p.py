@@ -32,16 +32,19 @@ __JUNGSEONG_TO_SYMBOL = {c: chr(0x1161 + i) for i, c in enumerate(JUNGSEONG)}
 __JONGSEONG_TO_SYMBOL = {c: chr(0x11A7 + i) for i, c in enumerate(JONGSEONG) if i > 0}
 
 
-def __to_pronunciation(norm_text: str) -> str:
+def to_pronunciation(norm_text: str) -> str:
     """
-    정규화된 텍스트를 발음형으로 변환한다.
+    정규화된 텍스트를 발음형으로 변환한다 (표준 발음법 + 형태소 기반 보정).
     출력은 입력과 같은 문자 수이며, 한글 이외 문자의 위치는 변하지 않음이 보장된다.
+    CER 계산 (cer.py)도 같은 발음을 봐야 하므로 이 함수를 거친다.
     """
     # 형태소 정보에 기반한 보정 (예외 사전·ㄴ첨가·의→에·형태소 경계의 경음화)
-    from style_bert_vits2.nlp.korean.morph import apply_morph_rules, clause_boundary_spaces
+    from style_bert_vits2.nlp.korean.morph import apply_morph_rules, clause_boundary_spaces, tokenize
 
-    # 절 경계는 보정 전 원문으로 판정한다. 보정이 문자 수를 보존하므로 인덱스는 그대로 맞는다
-    return pronounce(apply_morph_rules(norm_text), pause_positions=clause_boundary_spaces(norm_text))
+    # 보정과 절 경계 판정 모두 보정 전 원문의 분석을 쓴다 (보정이 문자 수를 보존해 인덱스가 그대로 맞는다)
+    tokens = tokenize(norm_text)
+    corrected = apply_morph_rules(norm_text, tokens)
+    return pronounce(corrected, pause_positions=clause_boundary_spaces(norm_text, tokens))
 
 
 def __syllable_to_phones(syllable: str) -> list[str]:
@@ -68,7 +71,7 @@ def g2p(norm_text: str) -> tuple[list[str], list[int], list[int]]:
     Returns:
         tuple[list[str], list[int], list[int]]: 음소·톤·word2ph 리스트
     """
-    pronounced = __to_pronunciation(norm_text)
+    pronounced = to_pronunciation(norm_text)
 
     phones: list[str] = []
     word2ph: list[int] = []
