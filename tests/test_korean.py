@@ -54,6 +54,14 @@ class TestNormalizer:
         assert read_number("10001") == "만일"
         assert read_number("20000") == "이만"
 
+    def test_numbers_beyond_the_group_units(self):
+        """경을 넘는 자릿수는 낱자로 읽는다 (예전에는 IndexError로 전처리·추론이 통째로 죽었다)"""
+        assert read_number("1" + "0" * 19) == "천경"  # 20자리까지는 그룹 단위로
+        assert read_number("1" + "0" * 20) == "일" + "공" * 20  # 21자리부터 낱자
+        assert read_number("12345678901234567890123") == "일이삼사오육칠팔구공일이삼사오육칠팔구공일이삼"
+        # 계좌번호처럼 긴 숫자가 섞인 문장도 끝까지 정규화된다
+        assert normalize_text("계좌 12345678901234567890123 입니다").startswith("계좌 일이삼사오육")
+
     def test_normalize_numbers_in_text(self):
         assert normalize_text("3일 전") == "삼일 전"
         assert normalize_text("1,000원") == "천원"

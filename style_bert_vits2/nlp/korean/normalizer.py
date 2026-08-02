@@ -83,6 +83,8 @@ __ALPHABET_MAP = {
 __SINO_DIGITS = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"]
 __SMALL_UNITS = ["", "십", "백", "천"]
 __GROUP_UNITS = ["", "만", "억", "조", "경"]
+# 그룹 단위표로 읽을 수 있는 최대 자릿수 (경 = 10^16이므로 20자리)
+__MAX_GROUPED_DIGITS = len(__GROUP_UNITS) * 4
 
 # 숫자 읽기 (고유어 수사)
 ## 단위명사 (조수사) 앞에서는 1-99를 고유어 관형형으로 읽는다: 3개 → 세 개
@@ -210,6 +212,7 @@ def read_number(num_str: str) -> str:
     """
     숫자 문자열 (정수 또는 소수)을 한자어 수사 읽기의 한글로 변환한다.
     예: "2026" → "이천이십육", "3.14" → "삼점일사", "10000" → "만"
+    경을 넘는 자릿수는 낱자로 읽는다 (계좌번호 등 수량이 아닌 번호로 보는 편이 안전하다).
     """
     if "." in num_str:
         int_part, frac_part = num_str.split(".", 1)
@@ -219,6 +222,9 @@ def read_number(num_str: str) -> str:
     int_value = int(int_part) if int_part else 0
     if int_value == 0:
         int_reading = "영"
+    elif len(int_part.lstrip("0")) > __MAX_GROUPED_DIGITS:
+        # 그룹 단위표에 없는 자릿수. 자릿수 읽기가 성립하지 않으므로 낱자로 돌린다
+        int_reading = __read_digits(int_part)
     else:
         # (그룹 값, 그룹 단위 인덱스)를 하위부터 수집
         raw_groups: list[tuple[int, int]] = []
