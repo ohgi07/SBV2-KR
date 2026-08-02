@@ -48,9 +48,10 @@ class TestNormalizer:
         assert read_number("110000") == "십일만"
         assert read_number("0") == "영"
         assert read_number("3.14") == "삼점일사"
-        assert read_number("100000000") == "억"
-        # 일 생략은 최상위 그룹만: 중간 그룹까지 생략하면 "억만"처럼 다른 수로 들린다
-        assert read_number("100010000") == "억일만"
+        # 일을 생략하는 단위는 만뿐 (억 이상에서 생략하면 [억]처럼 단위만 남아 뜻이 흐려진다)
+        assert read_number("100000000") == "일억"
+        assert read_number("1000000000000") == "일조"
+        assert read_number("100010000") == "일억만"
         assert read_number("10001") == "만일"
         assert read_number("20000") == "이만"
 

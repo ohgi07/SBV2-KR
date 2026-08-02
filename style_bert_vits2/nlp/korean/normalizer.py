@@ -236,12 +236,11 @@ def read_number(num_str: str) -> str:
             int_value //= 10000
             group_index += 1
         groups: list[str] = []
-        top_index = raw_groups[-1][1]
         for group, index in raw_groups:
             reading = __read_four_digits(group)
-            # 일의 생략은 최상위 그룹만 (10000→만, 100010000→억일만)
-            # 중간 그룹까지 생략하면 "억만"처럼 다른 수로 들려버린다
-            if group == 1 and index > 0 and index == top_index:
+            # 일을 생략하는 단위는 만뿐 (10000→만, 100010000→일억만).
+            # 억 이상은 생략하지 않는다 — 100000000은 [억]이 아니라 [일억]으로 읽는다
+            if group == 1 and index == 1:
                 reading = ""
             groups.append(reading + __GROUP_UNITS[index])
         int_reading = "".join(reversed(groups))
