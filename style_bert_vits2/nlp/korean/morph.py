@@ -270,6 +270,7 @@ def apply_morph_rules(text: str) -> str:
     형태소 정보에 기반한 발음 보정을 텍스트에 적용한다.
     출력은 입력과 같은 문자 수임이 보장된다.
     """
+    original = text
     text = apply_exceptions(text)
     text = __palatalize_d_hyeo(text)
 
@@ -277,8 +278,10 @@ def apply_morph_rules(text: str) -> str:
     if kiwi is None:
         return text
 
+    # 분석은 재작성 전 원문으로 한다 (재작성본 물똥이는 물똥 + 이로 갈린다).
+    # 재작성이 문자 수를 보존하므로 인덱스는 그대로 맞는다
     try:
-        tokens = list(kiwi.tokenize(text))
+        tokens = list(kiwi.tokenize(original))
     except Exception as e:
         logger.warning(f"kiwipiepy failed ({e}), skipping morphology-aware rules")
         return text
@@ -304,6 +307,7 @@ def apply_morph_rules(text: str) -> str:
             and is_hangul_syllable(chars[start])
             and is_hangul_syllable(chars[start - 1])
         ):
+            # 조건은 재작성된 chars로 본다. 예외 사전이 규칙을 끄는 통로다 (송벼련의 ㄹ이 첨가를 막음)
             cho, jung, _ = decompose(chars[start])
             _, _, prev_coda = decompose(chars[start - 1])
             if cho == "ㅇ" and jung in __N_INSERTION_VOWELS and prev_coda:
