@@ -341,6 +341,76 @@ class TestMorphRules:
         assert clause_boundary_spaces(text, tokens) == clause_boundary_spaces(text)
 
 
+class TestHfBackupPruning:
+    """
+    HF 백업의 stale LFS 정리 검증. 트리 조회가 LFS를 하나도 못 돌려주면 전량이 stale로
+    보여 방금 올린 백업까지 영구 삭제되므로, 그 경우에는 정리를 건너뛰어야 한다.
+    """
+
+    class _Lfs:
+        def __init__(self, sha: str):
+            self.sha256 = sha
+
+    class _TreeFile:
+        def __init__(self, sha):
+            self.lfs = TestHfBackupPruning._Lfs(sha) if sha else None
+
+    class _LfsFile:
+        def __init__(self, oid: str):
+            self.file_oid = oid
+
+    class _FakeApi:
+        def __init__(self, tree_shas, lfs_oids, upload_error=None):
+            self.tree_shas, self.lfs_oids = tree_shas, lfs_oids
+            self.upload_error = upload_error
+            self.squashed = False
+            self.deleted = None
+
+        def upload_folder(self, **kwargs):
+            from concurrent.futures import Future
+
+            future = Future()
+            if self.upload_error is not None:
+                future.set_exception(self.upload_error)
+            else:
+                future.set_result(type("R", (), {"commit_url": "https://hf.co/x/commit/abc"}))
+            return future
+
+        def super_squash_history(self, repo_id):
+            self.squashed = True
+
+        def list_repo_tree(self, repo_id, recursive=False):
+            return [TestHfBackupPruning._TreeFile(s) for s in self.tree_shas]
+
+        def list_lfs_files(self, repo_id):
+            return [TestHfBackupPruning._LfsFile(o) for o in self.lfs_oids]
+
+        def permanently_delete_lfs_files(self, repo_id, files):
+            self.deleted = [f.file_oid for f in files]
+
+    def _run(self, monkeypatch, fake):
+        import train_ms_jp_extra
+
+        monkeypatch.setattr(train_ms_jp_extra, "api", fake)
+        train_ms_jp_extra.backup_to_hf("user/repo")
+        return fake
+
+    def test_deletes_only_blobs_missing_from_the_tree(self, monkeypatch):
+        fake = self._run(monkeypatch, self._FakeApi(tree_shas=["a"], lfs_oids=["a", "old"]))
+        assert fake.squashed is True
+        assert fake.deleted == ["old"]
+
+    def test_keeps_every_blob_when_the_tree_lists_no_lfs_file(self, monkeypatch):
+        fake = self._run(monkeypatch, self._FakeApi(tree_shas=[], lfs_oids=["a", "b"]))
+        assert fake.deleted is None  # 전량 삭제 대신 아무것도 지우지 않는다
+
+    def test_skips_pruning_when_an_upload_failed(self, monkeypatch):
+        fake = self._FakeApi(tree_shas=["a"], lfs_oids=["a", "old"], upload_error=OSError("boom"))
+        self._run(monkeypatch, fake)
+        assert fake.squashed is False
+        assert fake.deleted is None
+
+
 class TestCheckpointOptimizerCompat:
     """
     シンボルテーブル拡張前の .pth (optimizer state 込み) から学習を再開できることの検証。

@@ -77,15 +77,21 @@ def backup_to_hf(repo_id: str, upload_assets: bool = True, blocking: bool = Fals
 
         return callback
 
-    def squash_history(future):
-        if future.exception() is not None:
-            return  # Upload failed (already logged); keep the previous backup intact
+    def squash_history(_future):
+        if any(not f.done() or f.exception() is not None for f in futures):
+            return  # An upload failed (already logged); keep the previous backup intact
         try:
             api.super_squash_history(repo_id=repo_id)
             # Squashing only unreferences old blobs; they still count toward storage
             # until explicitly deleted, so drop LFS files the current tree no longer uses
             tree_shas = {f.lfs.sha256 for f in api.list_repo_tree(repo_id, recursive=True) if getattr(f, "lfs", None)}
             stale = [f for f in api.list_lfs_files(repo_id) if f.file_oid not in tree_shas]
+            if stale and not tree_shas:
+                # Every blob looks stale only because the tree listing came back without any LFS
+                # entry. That is an incomplete listing, not an empty repo: deleting would wipe
+                # the backup we just uploaded, so leave the blobs alone and let storage grow
+                logger.error(f"HF backup: repo tree lists no LFS file, keeping {len(stale)} blobs")
+                return
             if stale:
                 api.permanently_delete_lfs_files(repo_id, stale)
             logger.info(f"HF backup: history squashed, {len(stale)} stale LFS files deleted")
@@ -112,6 +118,7 @@ def backup_to_hf(repo_id: str, upload_assets: bool = True, blocking: bool = Fals
         )
         future.add_done_callback(log_result(f"model_assets/{config.model_name}"))
         futures.append(future)
+    # Uploads are queued in order, so the last one finishing means they all did
     futures[-1].add_done_callback(squash_history)
     if blocking:
         for future in futures:
