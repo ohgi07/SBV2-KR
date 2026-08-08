@@ -868,6 +868,42 @@ class TestCorpusAnalyzer:
         # 치찰음 문맥
         assert "ㅅ" in report["sibilant_contexts"] or "ㅆ" in report["sibilant_contexts"]
 
+    def _write_wav(self, path, seconds: float, rate: int = 8000):
+        import wave
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(path), "wb") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(rate)
+            f.writeframes(b"\x00\x00" * int(rate * seconds))
+
+    def test_measures_audio_relative_to_the_dataset_dir(self, tmp_path):
+        """esd.list의 경로는 데이터셋 기준이다 (CWD 기준으로 열면 아무것도 측정되지 않는다)"""
+        import analyze_corpus
+
+        esd = tmp_path / "esd.list"
+        esd.write_text(
+            "a.wav|spk|KO|안녕하세요\n"
+            "sub/b.wav|spk|KO|반갑습니다\n"
+            "missing.wav|spk|KO|없는 파일\n",
+            encoding="utf-8",
+        )
+        self._write_wav(tmp_path / "wavs" / "a.wav", 2.0)  # 리샘플 후
+        self._write_wav(tmp_path / "raw" / "sub" / "b.wav", 4.0)  # 리샘플 전 (raw 폴백)
+
+        ad = analyze_corpus.analyze(esd, check_audio=True)["audio_duration_sec"]
+        assert ad["files_measured"] == 2
+        assert ad["mean"] == 3.0
+        assert ad["files_unmeasured"] == 1  # 읽지 못한 파일은 조용히 사라지지 않는다
+
+    def test_no_audio_section_when_measurement_is_skipped(self, tmp_path):
+        import analyze_corpus
+
+        esd = tmp_path / "esd.list"
+        esd.write_text("a.wav|spk|KO|안녕하세요\n", encoding="utf-8")
+        assert analyze_corpus.analyze(esd, check_audio=False)["audio_duration_sec"] == {}
+
 
 class TestBertFeatureAlignment:
     def test_char_to_token_map(self):

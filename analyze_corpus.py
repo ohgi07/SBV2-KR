@@ -45,6 +45,19 @@ def get_wav_duration(path: Path) -> float | None:
         return None
 
 
+def resolve_audio_path(esd_path: Path, wav_path: str) -> Path:
+    """
+    esd.list 첫 필드 (데이터셋 기준 상대 경로)를 실제 음성 파일 경로로 바꾼다.
+    리샘플 후의 wavs/ 를 먼저 보고, 없으면 리샘플 전 원본이 있는 raw/ 를 본다.
+    """
+    dataset_dir = esd_path.parent
+    for subdir in ("wavs", "raw"):
+        candidate = dataset_dir / subdir / wav_path
+        if candidate.exists():
+            return candidate
+    return dataset_dir / "wavs" / wav_path
+
+
 def analyze(esd_path: Path, check_audio: bool = True) -> dict:
     phone_counts: Counter[str] = Counter()
     punct_counts: Counter[str] = Counter()
@@ -52,6 +65,7 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
     sibilant_vowel_contexts: dict[str, Counter[str]] = defaultdict(Counter)
     text_lengths: list[int] = []
     durations: list[float] = []
+    unmeasured = 0
     long_texts: list[tuple[int, str]] = []
     speakers: Counter[str] = Counter()
     languages: Counter[str] = Counter()
@@ -96,11 +110,26 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
                         sibilant_vowel_contexts[SIBILANT_INITIALS[phone]][nxt] += 1
 
             if check_audio:
-                duration = get_wav_duration(Path(wav_path))
+                duration = get_wav_duration(resolve_audio_path(esd_path, wav_path))
                 if duration is not None:
                     durations.append(duration)
+                else:
+                    # 조용히 빠지면 "측정했는데 특이사항 없음"과 구분이 안 되므로 센다
+                    unmeasured += 1
 
     long_texts.sort(reverse=True)
+
+    audio_report: dict = {}
+    if durations:
+        audio_report = {
+            "files_measured": len(durations),
+            "mean": round(statistics.mean(durations), 2),
+            "median": round(statistics.median(durations), 2),
+            "max": round(max(durations), 2),
+            "total_hours": round(sum(durations) / 3600, 2),
+        }
+    if unmeasured:
+        audio_report["files_unmeasured"] = unmeasured
 
     report: dict = {
         "esd_path": str(esd_path),
@@ -140,17 +169,7 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
             if text_lengths
             else {}
         ),
-        "audio_duration_sec": (
-            {
-                "files_measured": len(durations),
-                "mean": round(statistics.mean(durations), 2),
-                "median": round(statistics.median(durations), 2),
-                "max": round(max(durations), 2),
-                "total_hours": round(sum(durations) / 3600, 2),
-            }
-            if durations
-            else {}
-        ),
+        "audio_duration_sec": audio_report,
     }
     return report
 
@@ -207,8 +226,8 @@ def print_report(report: dict) -> None:
         print(f"\n--- 텍스트 길이 (정규화 후 문자 수) ---")
         print(f"  평균 {tl['mean']} / 중앙값 {tl['median']} / 최대 {tl['max']}")
 
-    if report["audio_duration_sec"]:
-        ad = report["audio_duration_sec"]
+    ad = report["audio_duration_sec"]
+    if ad.get("files_measured"):
         print(f"\n--- 음성 길이 ({ad['files_measured']}개 파일) ---")
         print(f"  평균 {ad['mean']}초 / 중앙값 {ad['median']}초 / 최대 {ad['max']}초 / 총 {ad['total_hours']}시간")  # fmt: skip
         if ad["mean"] > MEAN_DURATION_WARNING_SEC:
@@ -216,6 +235,11 @@ def print_report(report: dict) -> None:
                 f"  [경고] 평균 음성 길이가 {MEAN_DURATION_WARNING_SEC}초를 초과합니다. "
                 "평균 발화 길이가 긴 데이터셋은 학습이 수렴하지 않을 수 있습니다."
             )
+    if ad.get("files_unmeasured"):
+        print(
+            f"\n[경고] 음성 {ad['files_unmeasured']}개는 길이를 읽지 못했습니다 "
+            "(wavs/·raw/ 에 파일이 없거나 wav 이외 포맷)"
+        )
     print("=" * 60)
 
 
