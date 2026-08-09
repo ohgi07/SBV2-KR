@@ -1,256 +1,249 @@
-# Style-Bert-VITS2 (SBV2-KR: 한국어 지원 포크)
+# Style-Bert-VITS2 한국어 지원 (SBV2-KR)
 
-> **🇰🇷 이 포크는 한국어(`KO`) 학습·추론 모드를 추가한 버전입니다.**
-> 한국어 G2P(표준발음법 기반)와 klue/roberta-large를 이용하며, 웹 UI의 주요 탭
-> (음성 합성·데이터셋 생성·학습)은 한국어로 표시됩니다. 자세한 내용은
-> [docs/Style-Bert-VITS2_ko.md](/docs/Style-Bert-VITS2_ko.md)를 참조하세요.
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10-3776AB.svg)](#설치)
+[![PyTorch](https://img.shields.io/badge/PyTorch-%3C2.6-EE4C2C.svg)](#설치)
+[![Upstream](https://img.shields.io/badge/Upstream-Style--Bert--VITS2-9cf.svg)](https://github.com/litagin02/Style-Bert-VITS2)
 
-**利用の際は必ず[お願いとデフォルトモデルの利用規約](/docs/TERMS_OF_USE.md)をお読みください。**
+Style-Bert-VITS2에 한국어(`KO`) 학습·추론을 추가한 포트입니다. 일본어 전용으로 설계된 Style-Bert-VITS2에서 언어 의존적인 두 구성요소(G2P와 BERT)만 한국어에 맞게 교체하고, 나머지 VITS2 아키텍처는 그대로 재사용합니다.
 
-Bert-VITS2 with more controllable voice styles.
+구현은 NDC26 발표 「SBV2 오픈소스를 활용한 한국어/일본어 TTS 만들기」(넥슨게임즈 김명지)에서 소개된 접근 방식을 기반으로 했습니다.
 
-https://github.com/litagin02/Style-Bert-VITS2/assets/139731664/e853f9a2-db4a-4202-a1dd-56ded3c562a0
+> 원본 프로젝트 문서: [日本語 README](README_ja.md) · [English](docs/Style-Bert-VITS2_en.md)
 
-You can install via `pip install style-bert-vits2` (inference only), see [library.ipynb](/library.ipynb) for example usage.
+## 지원 현황
 
-- **解説チュートリアル動画** [YouTube](https://youtu.be/aTUSzgDl1iY)　[ニコニコ動画](https://www.nicovideo.jp/watch/sm43391524)
-- [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](http://colab.research.google.com/github/litagin02/Style-Bert-VITS2/blob/master/colab.ipynb)
-- [**よくある質問** (FAQ)](/docs/FAQ.md)
-- [🤗 オンラインデモはこちらから](https://huggingface.co/spaces/litagin/Style-Bert-VITS2-Editor-Demo)
-- [Zennの解説記事](https://zenn.dev/litagin/articles/034819a5256ff4)
+| 기능 | 상태 |
+|------|------|
+| 한국어 학습 | ✅ |
+| 한국어 추론 | ✅ |
+| WebUI | ✅ |
+| JP-Extra 아키텍처 | ✅ |
+| 기존 JP 모델 호환 | ✅ |
+| 한국어 사전학습 모델 배포 | ❌ (코드·도구만 제공) |
+| ONNX 추론 | ❌ |
+| 악센트(음높이) 제어 | ❌ |
 
-- [**リリースページ**](https://github.com/litagin02/Style-Bert-VITS2/releases/)、[更新履歴](/docs/CHANGELOG.md)
-  - 2025-08-24: Ver 2.7.0: 外部ライブラリ [Aivis Project](https://aivis-project.com/) 等との連携のため、ONNX変換のGUI追加、また音声認識モデルとして `litagin/anime-whisper` の追加等
-  - 2024-09-09: Ver 2.6.1: Google colabでうまく学習できない等のバグ修正のみ
-  - 2024-06-16: Ver 2.6.0 (モデルの差分マージ・加重マージ・ヌルモデルマージの追加、使い道については[この記事](https://zenn.dev/litagin/articles/1297b1dc7bdc79)参照)
-  - 2024-06-14: Ver 2.5.1 (利用規約をお願いへ変更したのみ)
-  - 2024-06-02: Ver 2.5.0 (**[利用規約](/docs/TERMS_OF_USE.md)の追加**、フォルダ分けからのスタイル生成、小春音アミ・あみたろモデルの追加、インストールの高速化等)
-  - 2024-03-16: ver 2.4.1 (**batファイルによるインストール方法の変更**)
-  - 2024-03-15: ver 2.4.0 (大規模リファクタリングや種々の改良、ライブラリ化)
-  - 2024-02-26: ver 2.3 (辞書機能とエディター機能)
-  - 2024-02-09: ver 2.2
-  - 2024-02-07: ver 2.1
-  - 2024-02-03: ver 2.0 (JP-Extra)
-  - 2024-01-09: ver 1.3
-  - 2023-12-31: ver 1.2
-  - 2023-12-29: ver 1.1
-  - 2023-12-27: ver 1.0
+## 주요 특징
 
-This repository is based on [Bert-VITS2](https://github.com/fishaudio/Bert-VITS2) v2.1 and Japanese-Extra, so many thanks to the original author!
+- [한국어 G2P 자체 구현](style_bert_vits2/nlp/korean/) — 외부 G2P 라이브러리·네트워크 불필요
+- [표준발음법 기반 발음 변환](style_bert_vits2/nlp/korean/pronounce.py) — 어절 경계 규칙 포함
+- [숫자·단위·알파벳 정규화](style_bert_vits2/nlp/korean/normalizer.py) — 고유어/한자어 수사 구분
+- [`klue/roberta-large`](https://huggingface.co/klue/roberta-large) 기반 한국어 BERT 지원
+- JP-Extra 아키텍처 그대로 사용 — [기존 JP 모델과 체크포인트 호환](#4-기존-모델과의-호환성)
+- [JP → KO warm-start 임베딩 초기화 도구](warm_start_ko.py)
+- [CER 기반 자동 평가](speech_cer.py) · [코퍼스 커버리지 검사](analyze_corpus.py) 도구 포함
 
-**概要**
+## 설치
 
-- 入力されたテキストの内容をもとに感情豊かな音声を生成する[Bert-VITS2](https://github.com/fishaudio/Bert-VITS2)のv2.1とJapanese-Extraを元に、感情や発話スタイルを強弱込みで自由に制御できるようにしたものです。
-- GitやPythonがない人でも（Windowsユーザーなら）簡単にインストールでき、学習もできます (多くを[EasyBertVits2](https://github.com/Zuntan03/EasyBertVits2/)からお借りしました)。またGoogle Colabでの学習もサポートしています: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](http://colab.research.google.com/github/litagin02/Style-Bert-VITS2/blob/master/colab.ipynb)
-- 音声合成のみに使う場合は、グラボがなくてもCPUで動作します。
-- 音声合成のみに使う場合、Pythonライブラリとして`pip install style-bert-vits2`でインストールできます。例は[library.ipynb](/library.ipynb)を参照してください。
-- 他との連携に使えるAPIサーバーも同梱しています ([@darai0512](https://github.com/darai0512) 様によるPRです、ありがとうございます)。
-- 元々「楽しそうな文章は楽しそうに、悲しそうな文章は悲しそうに」読むのがBert-VITS2の強みですので、スタイル指定がデフォルトでも感情豊かな音声を生成することができます。
+### 1. 환경 준비
 
-
-## 使い方
-
-- CLIでの使い方は[こちら](/docs/CLI.md)を参照してください。
-- [よくある質問](/docs/FAQ.md)も参照してください。
-
-### 動作環境
-
-各UIとAPI Serverにおいて、Windows コマンドプロンプト・WSL2・Linux(Ubuntu Desktop)での動作を確認しています(WSLでのパス指定は相対パスなど工夫ください)。NVidiaのGPUが無い場合は学習はできませんが音声合成とマージは可能です。
-
-### インストール
-
-Pythonライブラリとしてのpipでのインストールや使用例は[library.ipynb](/library.ipynb)を参照してください。
-
-#### GitやPythonに馴染みが無い方
-
-Windowsを前提としています。
-
-1. [このzipファイル](https://github.com/litagin02/Style-Bert-VITS2/releases/latest/download/sbv2.zip)を**パスに日本語や空白が含まれない場所に**ダウンロードして展開します。
-  - グラボがある方は、`Install-Style-Bert-VITS2.bat`をダブルクリックします。
-  - グラボがない方は、`Install-Style-Bert-VITS2-CPU.bat`をダブルクリックします。CPU版では学習はできませんが、音声合成とマージは可能です。
-2. 待つと自動で必要な環境がインストールされます。
-3. その後、自動的に音声合成するためのエディターが起動したらインストール成功です。デフォルトのモデルがダウンロードされるているので、そのまま遊ぶことができます。
-
-またアップデートをしたい場合は、`Update-Style-Bert-VITS2.bat`をダブルクリックしてください。
-
-ただし2024-03-16の**2.4.1**バージョン未満からのアップデートの場合は、全てを削除してから再びインストールする必要があります。申し訳ありません。移行方法は[CHANGELOG.md](/docs/CHANGELOG.md)を参照してください。
-
-#### GitやPython使える人
-
-Pythonの仮想環境・パッケージ管理ツールである[uv](https://github.com/astral-sh/uv)がpipより高速なので、それを使ってインストールすることをお勧めします。
-（使いたくない場合は通常のpipでも大丈夫です。）
+Python 3.10 기준입니다. 가상환경을 만들고 의존성을 설치합니다.
 
 ```bash
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-git clone https://github.com/litagin02/Style-Bert-VITS2.git
-cd Style-Bert-VITS2
-uv venv venv
-venv\Scripts\activate
-uv pip install "torch<2.6" "torchaudio<2.6" --index-url https://download.pytorch.org/whl/cu118
-uv pip install -r requirements.txt
-python initialize.py  # 必要なモデルとデフォルトTTSモデルをダウンロード
+# 저장소 루트에서
+python -m venv .venv
+# Windows PowerShell:  .venv\Scripts\Activate.ps1
+# Windows bash / Linux / macOS:  source .venv/bin/activate   (Windows bash는 .venv/Scripts/activate)
+
+pip install -r requirements.txt
 ```
-最後を忘れずに。
 
-### 音声合成
+`requirements.txt`에 한국어에 필요한 `kiwipiepy`, `transformers`, `torch` 등이 모두 포함되어 있습니다. GPU 학습·추론에는 CUDA용 torch가 필요합니다 (예: `torch<2.6+cu118`, `torchaudio<2.6+cu118`).
 
-音声合成エディターは`Editor.bat`をダブルクリックか、`python server_editor.py --inbrowser`すると起動します（`--device cpu`でCPUモードで起動）。画面内で各セリフごとに設定を変えて原稿を作ったり、保存や読み込みや辞書の編集等ができます。
-インストール時にデフォルトのモデルがダウンロードされているので、学習していなくてもそれを使うことができます。
+> [!NOTE]
+> **한국어 G2P 의존성 요약**
+> - [kiwipiepy](https://github.com/bab2min/kiwipiepy)는 형태소 정보가 필요한 규칙(ㄴ첨가·의→에·일부 경음화)에 쓰입니다. 순수 wheel이라 Windows에서도 빌드 도구 없이 설치되며, 없어도 동작하지만 정확도를 위해 설치를 권장합니다.
+> - 그 외 한국어용 G2P 의존성은 없습니다 (`g2pkk`/`eunjeon`/`mecab` 불필요). 발음 규칙·테스트만 쓸 때는 torch 없이도 동작합니다.
 
-エディター部分は[別リポジトリ](https://github.com/litagin02/Style-Bert-VITS2-Editor)に分かれています。
+### 2. BERT 모델 다운로드
 
-バージョン2.2以前での音声合成WebUIは、`App.bat`をダブルクリックか、`python app.py`するとWebUIが起動します。または`Inference.bat`でも音声合成単独タブが開きます。
+한국어 문맥 임베딩용 BERT를 `bert/` 아래에 내려받습니다. `bert/bert_models.json`에 `klue-roberta-large`가 등록되어 있어 아래 명령으로 자동 준비됩니다.
 
-音声合成に必要なモデルファイルたちの構造は以下の通りです（手動で配置する必要はありません）。
-```
-model_assets
-├── your_model
-│   ├── config.json
-│   ├── your_model_file1.safetensors
-│   ├── your_model_file2.safetensors
-│   ├── ...
-│   └── style_vectors.npy
-└── another_model
-    ├── ...
-```
-このように、推論には`config.json`と`*.safetensors`と`style_vectors.npy`が必要です。モデルを共有する場合は、この3つのファイルを共有してください。
-
-このうち`style_vectors.npy`はスタイルを制御するために必要なファイルで、学習の時にデフォルトで平均スタイル「Neutral」が生成されます。
-複数スタイルを使ってより詳しくスタイルを制御したい方は、下の「スタイルの生成」を参照してください（平均スタイルのみでも、学習データが感情豊かならば十分感情豊かな音声が生成されます）。
-
-### 学習
-
-- CLIでの学習の詳細は[こちら](docs/CLI.md)を参照してください。
-- paperspace上での学習の詳細は[こちら](docs/paperspace.md)、colabでの学習は[こちら](http://colab.research.google.com/github/litagin02/Style-Bert-VITS2/blob/master/colab.ipynb)を参照してください。
-
-学習には2-14秒程度の音声ファイルが複数と、それらの書き起こしデータが必要です。
-
-- 既存コーパスなどですでに分割された音声ファイルと書き起こしデータがある場合はそのまま（必要に応じて書き起こしファイルを修正して）使えます。下の「学習WebUI」を参照してください。
-- そうでない場合、（長さは問わない）音声ファイルのみがあれば、そこから学習にすぐに使えるようにデータセットを作るためのツールを同梱しています。
-
-#### データセット作り
-
-- `App.bat`をダブルクリックか`python app.py`したところの「データセット作成」タブから、音声ファイルを適切な長さにスライスし、その後に文字の書き起こしを自動で行えます。または`Dataset.bat`をダブルクリックでもその単独タブが開きます。
-- 指示に従った後、下の「学習」タブでそのまま学習を行うことができます。
-
-#### 学習WebUI
-
-- `App.bat`をダブルクリックか`python app.py`して開くWebUIの「学習」タブから指示に従ってください。または`Train.bat`をダブルクリックでもその単独タブが開きます。
-
-### スタイルの生成
-
-- デフォルトでは、デフォルトスタイル「Neutral」の他、学習フォルダのフォルダ分けに応じたスタイルが生成されます。
-- それ以外の方法で手動でスタイルを作成したい人向けです。
-- `App.bat`をダブルクリックか`python app.py`して開くWebUIの「スタイル作成」タブから、音声ファイルを使ってスタイルを生成できます。または`StyleVectors.bat`をダブルクリックでもその単独タブが開きます。
-- 学習とは独立しているので、学習中でもできるし、学習が終わっても何度もやりなおせます（前処理は終わらせている必要があります）。
-
-### API Server
-
-構築した環境下で`python server_fastapi.py`するとAPIサーバーが起動します。
-API仕様は起動後に`/docs`にて確認ください。
-
-- 入力文字数はデフォルトで100文字が上限となっています。これは`config.yml`の`server.limit`で変更できます。
-- デフォルトではCORS設定を全てのドメインで許可しています。できる限り、`config.yml`の`server.origins`の値を変更し、信頼できるドメインに制限ください(キーを消せばCORS設定を無効にできます)。
-
-また音声合成エディターのAPIサーバーは`python server_editor.py`で起動します。があまりまだ整備をしていません。[エディターのリポジトリ](https://github.com/litagin02/Style-Bert-VITS2-Editor)から必要な最低限のAPIしか現在は実装していません。
-
-音声合成エディターのウェブデプロイについては[このDockerfile](Dockerfile.deploy)を参考にしてください。
-
-### マージ
-
-2つのモデルを、「声質」「声の高さ」「感情表現」「テンポ」の4点で混ぜ合わせて、新しいモデルを作ったり、また「あるモデルに、別の2つのモデルの差分を足す」等の操作ができます。
-`App.bat`をダブルクリックか`python app.py`して開くWebUIの「マージ」タブから、2つのモデルを選択してマージすることができます。または`Merge.bat`をダブルクリックでもその単独タブが開きます。
-
-### ONNX変換
-
-タブの「ONNX変換」または `ConvertONNX.bat` から、学習済みsafetensorsファイルをONNX形式に変換することができます。これは外部ライブラリ等でONNX形式ファイルが必要な場合に使えます。例えば [Aivis Project](https://aivis-project.com/) では [AIVM Generator](https://aivm-generator.aivis-project.com/) を使って、safetensorsファイルとONNXファイルからAivis Speech用のモデルを作成できます。
-
-### 自然性評価
-
-学習結果のうちどのステップ数がいいかの「一つの」指標として、[SpeechMOS](https://github.com/tarepan/SpeechMOS) を使うスクリプトを用意しています:
 ```bash
-python speech_mos.py -m <model_name>
+python initialize.py
 ```
-ステップごとの自然性評価が表示され、`mos_results`フォルダの`mos_{model_name}.csv`と`mos_{model_name}.png`に結果が保存される。読み上げさせたい文章を変えたかったら中のファイルを弄って各自調整してください。またあくまでアクセントや感情表現や抑揚を全く考えない基準での評価で、目安のひとつなので、実際に読み上げさせて選別するのが一番だと思います。
 
-## Bert-VITS2との関係
+설치가 끝나면 `python app.py`로 WebUI를 실행할 수 있습니다.
 
-基本的にはBert-VITS2のモデル構造を少し改造しただけです。[旧事前学習モデル](https://huggingface.co/litagin/Style-Bert-VITS2-1.0-base)も[JP-Extraの事前学習モデル](https://huggingface.co/litagin/Style-Bert-VITS2-2.0-base-JP-Extra)も、実質Bert-VITS2 v2.1 or JP-Extraと同じものを使用しています（不要な重みを削ってsafetensorsに変換したもの）。
+## 사용 방법
 
-具体的には以下の点が異なります。
+### 데이터셋
 
-- [EasyBertVits2](https://github.com/Zuntan03/EasyBertVits2)のように、PythonやGitを知らない人でも簡単に使える。
-- 感情埋め込みのモデルを変更（256次元の[wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM)へ、感情埋め込みというよりは話者識別のための埋め込み）
-- 感情埋め込みもベクトル量子化を取り払い、単なる全結合層に。
-- スタイルベクトルファイル`style_vectors.npy`を作ることで、そのスタイルを使って効果の強さも連続的に指定しつつ音声を生成することができる。
-- 各種WebUIを作成
-- bf16での学習のサポート
-- safetensors形式のサポート、デフォルトでsafetensorsを使用するように
-- その他軽微なbugfixやリファクタリング
+`esd.list`의 언어 컬럼에 `KO`를 지정합니다:
 
+```
+wavs/speaker_001.wav|speaker|KO|3일 전, 배가 고팠다.
+wavs/speaker_002.wav|speaker|KO|안녕하세요! 오늘은 날씨가 좋네요.
+```
 
-## References
-In addition to the original reference (written below), I used the following repositories:
-- [Bert-VITS2](https://github.com/fishaudio/Bert-VITS2)
-- [EasyBertVits2](https://github.com/Zuntan03/EasyBertVits2)
+> [!IMPORTANT]
+> 대본에는 문장 기호(`! ? … , .`)를 최대한 다양하게 포함하세요. **기반 모델 코퍼스에 등장하지 않는 기호·단어는 합성 품질이 떨어집니다.** 특히 치찰음 ㅅ/ㅆ/ㅈ/ㅊ 포함 단어는 다양한 문맥으로 포함하기를 권장합니다.
 
-[The pretrained model](https://huggingface.co/litagin/Style-Bert-VITS2-1.0-base) and [JP-Extra version](https://huggingface.co/litagin/Style-Bert-VITS2-2.0-base-JP-Extra) is essentially taken from [the original base model of Bert-VITS2 v2.1](https://huggingface.co/Garydesu/bert-vits2_base_model-2.1) and [JP-Extra pretrained model of Bert-VITS2](https://huggingface.co/Stardust-minus/Bert-VITS2-Japanese-Extra), so all the credits go to the original author ([Fish Audio](https://github.com/fishaudio)):
+### 코퍼스 검사 (학습 전 권장)
 
+```bash
+python analyze_corpus.py --model_name YourModel
+# 또는
+python analyze_corpus.py --esd_path path/to/esd.list --json report.json
+```
 
-In addition, [text/user_dict/](text/user_dict) module is based on the following repositories:
-- [voicevox_engine](https://github.com/VOICEVOX/voicevox_engine)
-and the license of this module is LGPL v3.
+데이터셋의 음소·문장기호 커버리지, 치찰음 문맥 다양성, 텍스트·음성 길이 통계를 검사해 문제 패턴을 경고합니다.
 
-## LICENSE
+### 학습
 
-This repository is licensed under the GNU Affero General Public License v3.0, the same as the original Bert-VITS2 repository. For more details, see [LICENSE](LICENSE).
+WebUI(`python app.py`)의 학습 탭에서 **JP-Extra판 사용**을 켜고 진행하거나, CLI로:
 
-In addition, [text/user_dict/](text/user_dict) module is licensed under the GNU Lesser General Public License v3.0, inherited from the original VOICEVOX engine repository. For more details, see [LGPL_LICENSE](LGPL_LICENSE).
+```bash
+python preprocess_all.py --use_jp_extra ...
+python train_ms_jp_extra.py ...
+```
 
+가중치 고정(freeze) 옵션 중 「일본어 bert 부분을 고정」(CLI `--freeze_JP_bert`)은 한국어에도 그대로 적용됩니다. KO는 JP-Extra의 단일 BERT 슬롯을 공유하므로 별도의 한국어용 플래그가 없습니다.
 
+경험상 도움이 되는 팁:
+- 기반 모델을 처음부터 만들 경우 **판별자(D) 오버피팅** 주의 — 생성자(G) 선행 학습 구간을 두고, D의 학습률을 G보다 낮게 설정
+- 데이터셋에 노이즈가 많거나 평균 발화 길이가 지나치게 길면 수렴하지 않을 수 있음
+- SBV2 파인튜닝은 기본 제공 파라미터를 그대로 쓰는 것이 안정적
+- 그래프 수치가 낮다고 반드시 품질이 좋은 것은 아님 — 직접 청취 병행
 
-Below is the original README.md.
----
+### 추론
 
-<div align="center">
+```python
+from style_bert_vits2.constants import Languages
+from style_bert_vits2.nlp import bert_models
+from style_bert_vits2.tts_model import TTSModel
 
-<img alt="LOGO" src="https://cdn.jsdelivr.net/gh/fishaudio/fish-diffusion@main/images/logo_512x512.png" width="256" height="256" />
+bert_models.load_model(Languages.KO, "bert/klue-roberta-large")
+bert_models.load_tokenizer(Languages.KO, "bert/klue-roberta-large")
 
-# Bert-VITS2
+model = TTSModel(model_path=..., config_path=..., style_vec_path=..., device="cuda")
+sr, audio = model.infer(text="안녕하세요!", language=Languages.KO, style="Neutral")
+```
 
-VITS2 Backbone with multilingual bert
+웹 UI 음성 합성 탭에서는 「언어」 드롭다운에서 `KO`를 선택하면 됩니다. 웹 UI는 주요 3개 탭(음성 합성·데이터셋 생성·학습)이 한국어화되어 있고, 스타일 생성·머지·ONNX 변환 탭과 일본어 예문 등 콘텐츠성 텍스트는 원문(일본어)을 유지합니다.
 
-For quick guide, please refer to `webui_preprocess.py`.
+### 자동 평가 (Whisper 왕복 CER)
 
-简易教程请参见 `webui_preprocess.py`。
+```bash
+python speech_cer.py --model_name YourModel [--whisper_model large-v3] [--unit jamo|syllable]
+```
 
-## 请注意，本项目核心思路来源于[anyvoiceai/MassTTS](https://github.com/anyvoiceai/MassTTS) 一个非常好的tts项目
-## MassTTS的演示demo为[ai版峰哥锐评峰哥本人,并找回了在金三角失落的腰子](https://www.bilibili.com/video/BV1w24y1c7z9)
+각 체크포인트(`*_s{step}.safetensors`)로 테스트 문장을 합성하고, faster-whisper(ko)로 재인식한 뒤 원문과의 CER을 계산합니다. loss 그래프가 수렴해도 품질이 나쁜 경우를 직접 청취 없이 걸러낼 수 있습니다. 결과는 `cer_results/cer_{모델명}.csv`와 스텝별 추이 그래프 `.png`로 저장됩니다.
 
-[//]: # (## 本项目与[PlayVoice/vits_chinese]&#40;https://github.com/PlayVoice/vits_chinese&#41; 没有任何关系)
+문장은 두 그룹으로 나뉘어 집계됩니다:
+- **test**: 스크립트에 내장된 고정 일반화 문장 (문장 기호·숫자·치찰음·격음/경음 포함)
+- **train**: 모델의 `train.list`에서 자동 샘플링한 학습 문장 (`--num_train`, 기본 4개) — 암기 성능 추적용으로, 학습이 정상이라면 test보다 CER이 먼저 떨어집니다
 
-[//]: # ()
-[//]: # (本仓库来源于之前朋友分享了ai峰哥的视频，本人被其中的效果惊艳，在自己尝试MassTTS以后发现fs在音质方面与vits有一定差距，并且training的pipeline比vits更复杂，因此按照其思路将bert)
+CER은 **발음형 자모 기준**으로 계산됩니다 (`style_bert_vits2/nlp/korean/cer.py`):
+- 양쪽 텍스트를 정규화·발음 변환 후 비교합니다. ASR의 표기 흔들림(`맛있다`/`마싣따`), 숫자 표기 차이(`3개`/`세 개`), 띄어쓰기·구두점 차이는 오류로 계산되지 않습니다.
+- 자모 단위(기본)는 받침 하나 오류를 1/3 음절로 계산해 음절 단위보다 완만한 신호를 제공합니다 (`--unit syllable`로 변경 가능).
 
-## 成熟的旅行者/开拓者/舰长/博士/sensei/猎魔人/喵喵露/V应当参阅代码自己学习如何训练。
+## 설계 개요
 
-### 严禁将此项目用于一切违反《中华人民共和国宪法》，《中华人民共和国刑法》，《中华人民共和国治安管理处罚法》和《中华人民共和国民法典》之用途。
-### 严禁用于任何政治相关用途。
-#### Video:https://www.bilibili.com/video/BV1hp4y1K78E
-#### Demo:https://www.bilibili.com/video/BV1TF411k78w
-#### QQ Group：815818430
-## References
-+ [anyvoiceai/MassTTS](https://github.com/anyvoiceai/MassTTS)
-+ [jaywalnut310/vits](https://github.com/jaywalnut310/vits)
-+ [p0p4k/vits2_pytorch](https://github.com/p0p4k/vits2_pytorch)
-+ [svc-develop-team/so-vits-svc](https://github.com/svc-develop-team/so-vits-svc)
-+ [PaddlePaddle/PaddleSpeech](https://github.com/PaddlePaddle/PaddleSpeech)
-+ [emotional-vits](https://github.com/innnky/emotional-vits)
-+ [fish-speech](https://github.com/fishaudio/fish-speech)
-+ [Bert-VITS2-UI](https://github.com/jiangyuxiaoxiao/Bert-VITS2-UI)
-## 感谢所有贡献者作出的努力
-<a href="https://github.com/fishaudio/Bert-VITS2/graphs/contributors" target="_blank">
-  <img src="https://contrib.rocks/image?repo=fishaudio/Bert-VITS2"/>
-</a>
+교체된 두 모듈 — G2P(텍스트→음소)와 BERT(문맥 임베딩) — 가 파이프라인에서 차지하는 위치는 다음과 같습니다. VITS2 본체·스타일 벡터·디코더·판별자는 언어와 무관하게 동작합니다.
 
-[//]: # (# 本项目所有代码引用均已写明，bert部分代码思路来源于[AI峰哥]&#40;https://www.bilibili.com/video/BV1w24y1c7z9&#41;，与[vits_chinese]&#40;https://github.com/PlayVoice/vits_chinese&#41;无任何关系。欢迎各位查阅代码。同时，我们也对该开发者的[碰瓷，乃至开盒开发者的行为]&#40;https://www.bilibili.com/read/cv27101514/&#41;表示强烈谴责。)
+```mermaid
+flowchart LR
+    T["텍스트"] --> N["정규화<br/>normalizer.py"]
+    N --> M["형태소 보정<br/>morph.py"]
+    M --> P["표준발음법 변환<br/>pronounce.py"]
+    P --> J["자모 분해<br/>g2p.py"]
+    J --> F["phones · tones · word2ph"]
+    N --> B["klue/roberta-large<br/>bert_feature.py"]
+    B --> E["문맥 임베딩"]
+    F --> V["VITS2 본체<br/>(JP-Extra)"]
+    E --> V
+    V --> A["음성"]
+```
+
+### 1. G2P 파이프라인 (`style_bert_vits2/nlp/korean/`)
+
+기존 일본어 처리 과정에서 한국어에 불필요한 단계를 제거하고 교체했습니다:
+
+| 일본어 처리 | 한국어 처리 | 비고 |
+|---|---|---|
+| Normalize (num2words) | Normalize (자체 구현) | 숫자→한자어 수사(만/억/조), 통화·퍼센트, 알파벳 음독 |
+| 형태소 분석 (pyopenjtalk) | **제거** | 한자 발음 분석이 불필요 |
+| 악센트 정보 추출 | **제거** | 한국어는 고저 악센트로 의미가 갈리지 않음 |
+| 가타카나 음소 변환 | 표준발음법 발음 변환 + 자모 분해 | 표기≠발음이므로 발음 변환 필수 |
+
+#### 발음 변환 (`pronounce.py`)
+
+표준발음법을 규칙 기반으로 구현한 자체 엔진으로, 다음 규칙을 적용합니다.
+
+- 연음
+- 구개음화
+- ㅎ 탈락·격음화
+- 자음군 단순화
+- 종성 중화
+- 경음화
+- 비음화
+- 유음화
+- ㅢ 발음 규칙 (희망→[히망])
+
+**어절 경계(공백을 넘는) 규칙**도 적용합니다. 공백 정확히 1개로 인접한 어절 쌍에 연음(§15: 몇 월→[며둴])·격음화(못 해→[모태])·경음화(몇 개→[멷깨])·비음화(§18 붙임: 밥 먹는다→[밤멍는다])·유음화(§20)를 적용합니다. ㄴ첨가(§29 붙임2: 한 일→[한닐])는 형태소 조건(1음절 실질형태소)이 필요하므로 `morph.py` 단계에서 처리합니다. 구두점 등 공백 이외의 경계는 휴지로 간주해 적용하지 않습니다.
+
+모든 변환은 **음절 수(문자 수) 보존을 보장**합니다 (word2ph 정렬에 필수).
+
+초기 버전은 g2pkk를 백엔드로 썼으나, 전수 비교로 동등 이상을 확인한 뒤 의존을 제거했습니다.
+
+#### 그 외 구성요소
+
+- **숫자 읽기**: 단위명사 앞의 1-99는 고유어 관형형으로 읽습니다 (`3개→세 개`, `20살→스무 살`, `1시 30분→한 시 삼십 분`, `1번째→첫 번째`). 100 이상·소수·한자어 단위(개월/분 등)는 한자어 수사로 읽습니다.
+- **형태소 기반 보정** (`morph.py`): kiwipiepy가 설치되어 있으면 형태소 정보가 필요한 규칙을 추가 적용합니다 — 형태소 경계 ㄴ첨가(한여름→[한녀름]), 속격 조사 의→[에](나의→[나에]), 관형사형 -ㄹ 뒤 경음화(갈 데가→[갈 떼가]), 용언 어간말 ㄴ/ㅁ 뒤 경음화(신다→[신따]). 등재 합성어의 ㄴ첨가와 예외어는 내장 발음 예외 사전(`PRONUNCIATION_EXCEPTIONS`, 같은 글자 수 항목을 추가해 확장 가능)으로 처리합니다 (솜이불→[솜니불], 맛있다→[마싣따] 등).
+- **음소 체계**: 발음형 한글을 자모(초성 18종 + 중성 21종 + 중화된 종성 7종 = 46개)로 분해해 심볼로 사용합니다. 초성 ㅇ(무음)은 음소를 내지 않습니다.
+- **톤**: 한국어는 전부 0 (톤 미사용, `NUM_KO_TONES = 1`).
+- **공백**: `SP` 음소로 매핑되어 모델이 어절 간 호흡(무음)을 학습할 수 있습니다.
+
+예시:
+
+```
+"3일 전, 배가 고팠다."
+→ 정규화: "삼일 전, 배가 고팠다."
+→ 발음:   "사밀 전, 배가 고팓따."
+→ phones: [_, ᄉ, ᅡ, ᄆ, ᅵ, ᆯ, SP, ᄌ, ᅥ, ᆫ, ",", SP, ᄇ, ᅢ, ᄀ, ᅡ, SP, ᄀ, ᅩ, ᄑ, ᅡ, ᆮ, ᄄ, ᅡ, ".", _]
+→ tones:  전부 0
+→ word2ph: [1, 2, 3, 1, 3, 1, 1, 2, 2, 1, 2, 3, 2, 1, 1]
+```
+
+### 2. BERT 모델 교체
+
+일본어 DeBERTa 대신 [`klue/roberta-large`](https://huggingface.co/klue/roberta-large)를 기본으로 사용합니다. `klue/roberta-large`는 hidden size가 1024로 JP-Extra의 기존 BERT 인터페이스와 동일하므로 모델 구조를 수정할 필요가 없습니다. 모두의 말뭉치·위키 등 정제된 코퍼스로 학습되어 댓글 코퍼스 기반 모델(KcBERT)보다 편향·도메인 쏠림이 적고, 최대 입력 길이도 더 깁니다.
+
+WordPiece 서브워드 토크나이저는 중국어처럼 토큰과 문자가 1:1로 대응하지 않습니다. 그래서 offset mapping으로 토큰 특징을 문자 단위로 전개한 뒤, word2ph에 따라 음소 단위로 확장합니다 (`korean/bert_feature.py`). 이 경로는 아키텍처 중립적이라 hidden size 1024인 다른 한국어 모델(`beomi/kcbert-large` 등)로 교체할 수도 있습니다. 단, **BERT 선택은 TTS 학습 시점에 고정**되므로 기반 모델 학습 전에 비교를 마쳐야 합니다.
+
+### 3. 아키텍처: JP-Extra 경로 재사용
+
+한국어 모델은 **JP-Extra 계열 아키텍처(단일 BERT 입력)** 로 학습/추론합니다. 텍스트 프런트엔드만 한국어로 바뀌고 모델 구조는 동일합니다.
+
+### 4. 기존 모델과의 호환성
+
+한국어 심볼·톤·언어 ID는 모두 기존 테이블 뒤에 추가되므로, 기존 JP/EN/ZH 심볼의 인덱스는 변경되지 않습니다. KO 추가 이전에 학습된 체크포인트를 로드하면 임베딩 테이블의 기존 행을 그대로 복사하고 새 행만 초기값으로 두는 호환 처리가 자동으로 적용됩니다 (`checkpoints.py` / `safetensors.py`).
+
+기존 일본어 모델은 그대로 동작합니다. 일본어 사전학습 모델에서 한국어를 파인튜닝하는 것도 가능합니다 (단, 한국어 음소 임베딩은 처음부터 학습됩니다).
+
+## 제한 사항
+
+1. **ONNX 추론 미지원**: `convert_bert_onnx.py`가 아직 한국어 BERT 변환을 지원하지 않습니다. ONNX 경로(`extract_bert_feature_onnx`)는 변환된 모델을 직접 준비한 경우에만 동작합니다. PyTorch 추론 경로를 사용하세요.
+2. **음높낮이(악센트) 조절 불가**: 악센트 추출 단계를 제거했으므로 일본어에서 제공되던 학습 기반 음높이 조절은 사용할 수 없습니다. 장음 조절도 마찬가지입니다.
+3. **kiwipiepy 미설치 시 일부 규칙 비활성**: 형태소 기반 규칙(ㄴ첨가·어절 경계 ㄴ첨가 등)은 kiwipiepy 설치 시에만 동작합니다. 미설치 시 내장 규칙 엔진 + 예외 사전만 적용됩니다.
+4. **숫자 읽기 한계**: 숫자+단위의 동철이의어(3분 = 삼 분/세 분, 20대 = 이십 대/스무 대)는 규칙만으로 구분할 수 없어 더 흔한 읽기로 고정되어 있습니다 (분→시간 단위 한자어, 대→수량 고유어). 단, 서수 접두 `제N`(제3장, 제2회)은 항상 한자어로 읽습니다.
+5. **표준발음법 중 의도적으로 구현하지 않은 조항**: §6·7 모음의 장단(음소 체계에 길이 구분이 없음 — 현대 서울말에서 변별력 상실), §16 한글 자모 이름의 특례(디귿이→[디그시] — TTS 입력에 드물고 일반 어휘 오발동 위험이 큼). 복수 발음이 허용되는 조항(§5 어중 ㅢ→[ㅣ] 허용, §22 되어[되여] 허용, §30 사이시옷 [ㄷ] 허용 등)은 한쪽 표준 발음을 일관되게 채택합니다.
+6. **BERT 최대 입력 길이**: 모델에 따라 다릅니다 (klue/roberta-large: 512 토큰, kcbert-large: 300 토큰 — 토크나이저에서 자동으로 읽어 적용됨). 초과분은 잘리므로 긴 문장은 나눠서 합성하세요 (기본 추론 설정은 줄 단위 분할이 켜져 있음).
+
+## 테스트
+
+```bash
+pytest tests/test_korean.py           # 정규화·발음 규칙·G2P 불변식·BERT 정렬
+pytest tests/test_korean_goldset.py   # 표준발음법 골드셋 회귀 + 퍼징
+python tests/test_korean_goldset.py   # 카테고리별 정확도 리포트 출력
+```
+
+모델 가중치는 불필요합니다. 골드셋은 표준발음법 조항별 대표 예시(어절 경계 규칙·어휘 예외 포함)를 실제 G2P 경로로 검증합니다. 유일한 `xfail`은 문맥 없이 판별 불가능한 고립 동철이의어 `신고`(신다[신꼬]/申告[신고])입니다.
+
+## 크레딧
+
+- [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) (litagin02) — 이 포크의 원본 프로젝트
+- [KLUE](https://github.com/KLUE-benchmark/KLUE) — 한국어 BERT [`klue/roberta-large`](https://huggingface.co/klue/roberta-large)
+- [kiwipiepy](https://github.com/bab2min/kiwipiepy) (bab2min) — 한국어 형태소 분석기
