@@ -52,9 +52,7 @@ pip install -r requirements.txt
 `requirements.txt`에 한국어에 필요한 `kiwipiepy`, `transformers`, `torch` 등이 모두 포함되어 있습니다. GPU 학습·추론에는 CUDA용 torch가 필요합니다 (예: `torch<2.6+cu118`, `torchaudio<2.6+cu118`).
 
 > [!NOTE]
-> **한국어 G2P 의존성 요약**
-> - [kiwipiepy](https://github.com/bab2min/kiwipiepy)는 형태소 정보가 필요한 규칙(ㄴ첨가·의→에·일부 경음화)에 쓰입니다. 순수 wheel이라 Windows에서도 빌드 도구 없이 설치되며, 없어도 동작하지만 정확도를 위해 설치를 권장합니다.
-> - 그 외 한국어용 G2P 의존성은 없습니다 (`g2pkk`/`eunjeon`/`mecab` 불필요). 발음 규칙·테스트만 쓸 때는 torch 없이도 동작합니다.
+> 한국어용 추가 G2P 의존성은 없습니다 (`g2pkk`/`eunjeon`/`mecab` 불필요). 발음 규칙·테스트만 쓸 때는 torch 없이도 동작합니다.
 
 ### 2. BERT 모델 다운로드
 
@@ -191,7 +189,7 @@ flowchart LR
 #### 그 외 구성요소
 
 - **숫자 읽기**: 단위명사 앞의 1-99는 고유어 관형형으로 읽습니다 (`3개→세 개`, `20살→스무 살`, `1시 30분→한 시 삼십 분`, `1번째→첫 번째`). 100 이상·소수·한자어 단위(개월/분 등)는 한자어 수사로 읽습니다.
-- **형태소 기반 보정** (`morph.py`): kiwipiepy가 설치되어 있으면 형태소 정보가 필요한 규칙을 추가 적용합니다 — 형태소 경계 ㄴ첨가(한여름→[한녀름]), 속격 조사 의→[에](나의→[나에]), 관형사형 -ㄹ 뒤 경음화(갈 데가→[갈 떼가]), 용언 어간말 ㄴ/ㅁ 뒤 경음화(신다→[신따]). 등재 합성어의 ㄴ첨가와 예외어는 내장 발음 예외 사전(`PRONUNCIATION_EXCEPTIONS`, 같은 글자 수 항목을 추가해 확장 가능)으로 처리합니다 (솜이불→[솜니불], 맛있다→[마싣따] 등).
+- **형태소 기반 보정** (`morph.py`): kiwipiepy가 설치되어 있으면 형태소 정보가 필요한 규칙을 추가 적용합니다 — 형태소 경계 ㄴ첨가(한여름→[한녀름]), 속격 조사 의→\[에\](나의→\[나에\]), 관형사형 -ㄹ 뒤 경음화(갈 데가→[갈 떼가]), 용언 어간말 ㄴ/ㅁ 뒤 경음화(신다→[신따]). 등재 합성어의 ㄴ첨가와 예외어는 내장 발음 예외 사전(`PRONUNCIATION_EXCEPTIONS`, 같은 글자 수 항목을 추가해 확장 가능)으로 처리합니다 (솜이불→[솜니불], 맛있다→[마싣따] 등).
 - **음소 체계**: 발음형 한글을 자모(초성 18종 + 중성 21종 + 중화된 종성 7종 = 46개)로 분해해 심볼로 사용합니다. 초성 ㅇ(무음)은 음소를 내지 않습니다.
 - **톤**: 한국어는 전부 0 (톤 미사용, `NUM_KO_TONES = 1`).
 - **공백**: `SP` 음소로 매핑되어 모델이 어절 간 호흡(무음)을 학습할 수 있습니다.
@@ -209,7 +207,7 @@ flowchart LR
 
 ### 2. BERT 모델 교체
 
-일본어 DeBERTa 대신 [`klue/roberta-large`](https://huggingface.co/klue/roberta-large)를 기본으로 사용합니다. `klue/roberta-large`는 hidden size가 1024로 JP-Extra의 기존 BERT 인터페이스와 동일하므로 모델 구조를 수정할 필요가 없습니다. 모두의 말뭉치·위키 등 정제된 코퍼스로 학습되어 댓글 코퍼스 기반 모델(KcBERT)보다 편향·도메인 쏠림이 적고, 최대 입력 길이도 더 깁니다.
+일본어 DeBERTa 대신 `klue/roberta-large`를 기본으로 사용합니다. `klue/roberta-large`는 hidden size가 1024로 JP-Extra의 기존 BERT 인터페이스와 동일하므로 모델 구조를 수정할 필요가 없습니다. 모두의 말뭉치·위키 등 정제된 코퍼스로 학습되어 댓글 코퍼스 기반 모델(KcBERT)보다 편향·도메인 쏠림이 적고, 최대 입력 길이도 더 깁니다.
 
 WordPiece 서브워드 토크나이저는 중국어처럼 토큰과 문자가 1:1로 대응하지 않습니다. 그래서 offset mapping으로 토큰 특징을 문자 단위로 전개한 뒤, word2ph에 따라 음소 단위로 확장합니다 (`korean/bert_feature.py`). 이 경로는 아키텍처 중립적이라 hidden size 1024인 다른 한국어 모델(`beomi/kcbert-large` 등)로 교체할 수도 있습니다. 단, **BERT 선택은 TTS 학습 시점에 고정**되므로 기반 모델 학습 전에 비교를 마쳐야 합니다.
 
@@ -245,5 +243,5 @@ python tests/test_korean_goldset.py   # 카테고리별 정확도 리포트 출�
 ## 크레딧
 
 - [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) (litagin02) — 이 포크의 원본 프로젝트
-- [KLUE](https://github.com/KLUE-benchmark/KLUE) — 한국어 BERT [`klue/roberta-large`](https://huggingface.co/klue/roberta-large)
+- [KLUE](https://github.com/KLUE-benchmark/KLUE) — 한국어 BERT `klue/roberta-large`
 - [kiwipiepy](https://github.com/bab2min/kiwipiepy) (bab2min) — 한국어 형태소 분석기
