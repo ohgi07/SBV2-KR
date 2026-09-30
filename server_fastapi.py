@@ -4,6 +4,7 @@ TODO: server_editor.pyと統合する?
 """
 
 import argparse
+import asyncio
 import os
 import sys
 from io import BytesIO
@@ -19,7 +20,6 @@ from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from scipy.io import wavfile
-from starlette.concurrency import iterate_in_threadpool
 
 from config import get_config
 from style_bert_vits2.constants import (
@@ -355,11 +355,14 @@ if __name__ == "__main__":
         )
 
         async def body():
-            # Starlette は切断時に同期イテレータを close() しないため、応答の終了時 (正常・切断・エラー) に明示的に閉じる
+            # /voice と同じく推論はイベントループのスレッドで行う (pyopenjtalk_worker のソケットなど、ロックのない共有資源を
+            # 複数スレッドから同時に使わないため)。送信だけでは制御が戻らないことがあるため、チャンクごとに明示的に制御を返し、
+            # その間に他のリクエストや切断の検知を進める。応答の終了時 (正常・切断・エラー) には必ずストリームを閉じる
             try:
                 yield wav_header(stream.sample_rate, stream.num_samples)
-                async for chunk in iterate_in_threadpool(stream):
+                for chunk in stream:
                     yield chunk.tobytes()
+                    await asyncio.sleep(0)
             finally:
                 stream.close()
 
