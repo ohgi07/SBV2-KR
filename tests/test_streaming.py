@@ -9,6 +9,7 @@ import wave
 
 import numpy as np
 import pytest
+import torch
 
 from style_bert_vits2.models.hyper_parameters import HyperParametersModel
 from style_bert_vits2.models.streaming import (
@@ -19,6 +20,7 @@ from style_bert_vits2.models.streaming import (
     plan_chunks,
     wav_header,
 )
+from style_bert_vits2.nlp.symbols import SYMBOLS
 
 
 def _covered_frames(plans: list[ChunkPlan]) -> list[int]:
@@ -106,3 +108,51 @@ class TestWavHeader:
         assert len(header) == 44
         assert header[4:8] == b"\xff\xff\xff\xff" and header[40:44] == b"\xff\xff\xff\xff"
         assert header[24:28] == (44100).to_bytes(4, "little")
+
+
+# 디코더 구조는 KO 모델과 같고 나머지는 작게 줄인 무작위 가중치 JP-Extra 모델 설정 (CPU 에서 0.1초 내외로 생성된다)
+TINY_MODEL_KWARGS = dict(
+    n_vocab=len(SYMBOLS), spec_channels=513, segment_size=32, inter_channels=16, hidden_channels=16,
+    filter_channels=32, n_heads=2, n_layers=3, kernel_size=3, p_dropout=0.1, n_speakers=1, gin_channels=16,
+    n_layers_trans_flow=3, resblock="1", resblock_kernel_sizes=[3, 7, 11], resblock_dilation_sizes=[[1, 3, 5]] * 3,
+    upsample_rates=[8, 8, 2, 2, 2], upsample_initial_channel=32, upsample_kernel_sizes=[16, 16, 8, 2, 2],
+)
+
+
+def _tiny_net_g():
+    from style_bert_vits2.models.models_jp_extra import SynthesizerTrn
+
+    torch.manual_seed(0)
+    return SynthesizerTrn(**TINY_MODEL_KWARGS).eval()
+
+
+def _tiny_inputs(n_phones: int = 12) -> tuple[torch.Tensor, ...]:
+    """infer() 의 위치 인자 (x, x_lengths, sid, tone, language, bert, style_vec)"""
+    gen = torch.Generator().manual_seed(3)
+    x = torch.randint(1, len(SYMBOLS), (1, n_phones), generator=gen)
+    zeros = torch.zeros(1, n_phones, dtype=torch.long)
+    bert, style_vec = torch.randn(1, 1024, n_phones, generator=gen), torch.randn(1, 256, generator=gen)
+    return x, torch.LongTensor([n_phones]), torch.LongTensor([0]), zeros, zeros, bert, style_vec
+
+
+class TestInferInputFeature:
+    def test_infer_equals_input_feature_then_decoder(self):
+        net_g, args = _tiny_net_g(), _tiny_inputs()
+        kwargs = dict(noise_scale=0.6, noise_scale_w=0.8, sdp_ratio=0.5)
+        with torch.no_grad():
+            torch.manual_seed(1)
+            o, attn, y_mask, (z, z_p, m_p, logs_p) = net_g.infer(*args, **kwargs)
+            torch.manual_seed(1)
+            z2, y_mask2, g2, attn2, z_p2, m_p2, logs_p2 = net_g.infer_input_feature(*args, **kwargs)
+            o2 = net_g.dec(z2 * y_mask2, g=g2)
+        for a, b in [(o, o2), (attn, attn2), (y_mask, y_mask2), (z, z2), (z_p, z_p2), (m_p, m_p2), (logs_p, logs_p2)]:
+            assert torch.equal(a, b)
+
+    def test_max_len_only_truncates_decoder_input(self):
+        net_g, args = _tiny_net_g(), _tiny_inputs()
+        with torch.no_grad():
+            torch.manual_seed(1)
+            o, _, y_mask, (z, *_) = net_g.infer(*args, max_len=5)
+        # 음소마다 최소 1 프레임이므로 전체 프레임은 12 이상이고, 디코더 입력만 5 프레임으로 잘린다
+        assert o.shape[2] == 5 * 512
+        assert z.shape[2] == y_mask.shape[2] >= 12

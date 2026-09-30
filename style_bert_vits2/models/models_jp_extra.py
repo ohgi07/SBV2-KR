@@ -1106,7 +1106,7 @@ class SynthesizerTrn(nn.Module):
             g,
         )
 
-    def infer(
+    def infer_input_feature(
         self,
         x: torch.Tensor,
         x_lengths: torch.Tensor,
@@ -1118,10 +1118,17 @@ class SynthesizerTrn(nn.Module):
         noise_scale: float = 0.667,
         length_scale: float = 1.0,
         noise_scale_w: float = 0.8,
-        max_len: Optional[int] = None,
         sdp_ratio: float = 0.0,
         y: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Generator (デコーダ) に入力する潜在変数を生成する。通常推論とストリーミング推論で共通の前半処理。
+        乱数の消費順序は従来の infer() と同じ。
+
+        Returns:
+            tuple: z, y_mask, g, attn, z_p, m_p, logs_p (いずれも max_len による切り詰め前)
+        """
+
         # x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, tone, language, bert)
         # g = self.gst(y)
         if self.n_speakers > 0:
@@ -1153,5 +1160,27 @@ class SynthesizerTrn(nn.Module):
 
         z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
         z = self.flow(z_p, y_mask, g=g, reverse=True)
+        return z, y_mask, g, attn, z_p, m_p, logs_p
+
+    def infer(
+        self,
+        x: torch.Tensor,
+        x_lengths: torch.Tensor,
+        sid: torch.Tensor,
+        tone: torch.Tensor,
+        language: torch.Tensor,
+        bert: torch.Tensor,
+        style_vec: torch.Tensor,
+        noise_scale: float = 0.667,
+        length_scale: float = 1.0,
+        noise_scale_w: float = 0.8,
+        max_len: Optional[int] = None,
+        sdp_ratio: float = 0.0,
+        y: Optional[torch.Tensor] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, tuple[torch.Tensor, ...]]:
+        z, y_mask, g, attn, z_p, m_p, logs_p = self.infer_input_feature(
+            x, x_lengths, sid, tone, language, bert, style_vec, noise_scale=noise_scale, length_scale=length_scale,
+            noise_scale_w=noise_scale_w, sdp_ratio=sdp_ratio, y=y,
+        )
         o = self.dec((z * y_mask)[:, :, :max_len], g=g)
         return o, attn, y_mask, (z, z_p, m_p, logs_p)
