@@ -156,3 +156,22 @@ class TestInferInputFeature:
         # 음소마다 최소 1 프레임이므로 전체 프레임은 12 이상이고, 디코더 입력만 5 프레임으로 잘린다
         assert o.shape[2] == 5 * 512
         assert z.shape[2] == y_mask.shape[2] >= 12
+
+
+class TestDecodeChunks:
+    def test_concatenated_chunks_match_full_decode(self):
+        from style_bert_vits2.models.infer import decode_chunks
+
+        net_g, geometry = _tiny_net_g(), decoder_geometry(HyperParametersModel())
+        gen = torch.Generator().manual_seed(2)
+        z, g = torch.randn(1, 16, 250, generator=gen), torch.randn(1, 16, 1, generator=gen)
+        with torch.no_grad():
+            full = net_g.dec(z, g=g)[0, 0].numpy()
+        # 바깥에 no_grad 가 없어도 동작해야 한다 (서버에서는 반복이 작업 스레드에서 일어난다)
+        plans = plan_chunks(250, 100, geometry.min_overlap)
+        chunks = list(decode_chunks(net_g, z, g, plans, geometry.upsample_factor))
+        assert len(chunks) == len(plans) > 1
+        assert all(c.dtype == np.float32 for c in chunks)
+        out = np.concatenate(chunks)
+        assert out.shape == full.shape
+        np.testing.assert_allclose(out, full, atol=1e-5)
