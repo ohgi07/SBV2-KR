@@ -32,7 +32,7 @@ class ChunkPlan:
 
 @dataclass(frozen=True)
 class DecoderGeometry:
-    """디코더 1 프레임당 출력 샘플 수와, 청크 경계 오차가 생기지 않는 최소 겹침 프레임 수"""
+    """디코더 1 프레임당 출력 샘플 수와, 청크 경계 오차가 생기지 않는 겹침 프레임 수의 하한 (한쪽 1 프레임 여유를 둔 보수적인 값)"""
 
     upsample_factor: int
     min_overlap: int

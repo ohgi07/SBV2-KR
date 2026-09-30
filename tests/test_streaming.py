@@ -54,7 +54,10 @@ class TestPlanChunks:
         assert plans[-1] == ChunkPlan(680, 779, 16, 0)
         assert len(_covered_frames(plans)) == 779
 
-    @pytest.mark.parametrize("total,chunk_size,overlap_size", [(0, 100, 32), (-1, 100, 32), (10, 100, 31), (10, 32, 32), (10, 30, 32), (10, 100, 0)])
+    @pytest.mark.parametrize(
+        "total,chunk_size,overlap_size",
+        [(0, 100, 32), (-1, 100, 32), (10, 100, 31), (10, 32, 32), (10, 30, 32), (10, 100, 0)],
+    )
     def test_invalid_arguments(self, total, chunk_size, overlap_size):
         with pytest.raises(ValueError):
             plan_chunks(total, chunk_size, overlap_size)
@@ -70,10 +73,22 @@ class TestDecoderGeometry:
         hps = HyperParametersModel(resblock="2", resblock_kernel_sizes=[3], resblock_dilation_sizes=[[1, 3, 5]])
         assert decoder_geometry(hps) == DecoderGeometry(upsample_factor=512, min_overlap=10)
 
-    def test_odd_kernel_minus_rate_is_unsupported(self):
-        # 16 - 7 = 9 (홀수) 이면 ConvTranspose 출력 길이가 L*u 가 아니게 된다
+    @pytest.mark.parametrize(
+        "hps_kwargs",
+        [
+            # 16 - 7 = 9 (홀수) 이면 ConvTranspose 출력 길이가 L*u 가 아니게 된다
+            dict(upsample_rates=[7, 8, 2, 2, 2]),
+            # kernel < upsample_rate
+            dict(upsample_kernel_sizes=[4, 16, 8, 2, 2]),
+            # 짝수 ResBlock kernel 은 출력 길이가 1 줄어든다
+            dict(resblock_kernel_sizes=[4, 7, 11]),
+            dict(upsample_kernel_sizes=[16, 16, 8, 2]),
+            dict(resblock_dilation_sizes=[[1, 3, 5]] * 2),
+        ],
+    )
+    def test_unsupported_config(self, hps_kwargs):
         with pytest.raises(ValueError):
-            decoder_geometry(HyperParametersModel(upsample_rates=[7, 8, 2, 2, 2]))
+            decoder_geometry(HyperParametersModel(**hps_kwargs))
 
 
 class TestFloatToPcm16Fixed:
