@@ -4,7 +4,7 @@ cn2an
 faster-whisper==1.0.3
 g2p_en
 # Korean morphological analyzer.
-kiwipiepy
+kiwipiepy>=0.22,<0.24
 GPUtil
 gradio>=4.32
 jieba
