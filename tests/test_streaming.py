@@ -6,11 +6,13 @@
 
 import io
 import wave
+from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
+from style_bert_vits2.constants import Languages
 from style_bert_vits2.models.hyper_parameters import HyperParametersModel
 from style_bert_vits2.models.streaming import (
     ChunkPlan,
@@ -190,3 +192,85 @@ class TestDecodeChunks:
         out = np.concatenate(chunks)
         assert out.shape == full.shape
         np.testing.assert_allclose(out, full, atol=1e-5)
+
+
+def _dummy_tts_model(model_file: str = "dummy.safetensors", **hps_kwargs):
+    """모델 파일 없이 검증 로직만 확인하기 위한 TTSModel (실제로 로드하면 파일이 없어 실패한다)"""
+    from style_bert_vits2.models.hyper_parameters import HyperParameters
+    from style_bert_vits2.tts_model import TTSModel
+
+    return TTSModel(Path(model_file), HyperParameters(**hps_kwargs), np.zeros((1, 256), dtype=np.float32))
+
+
+class TestInferStreamValidation:
+    @pytest.mark.parametrize(
+        "kwargs,match",
+        [
+            (dict(overlap_size=16), "overlap_size must be at least 28"),
+            (dict(chunk_size=32, overlap_size=32), "chunk_size"),
+            (dict(overlap_size=31), "chunk_size"),
+            (dict(split_interval=-0.1), "split_interval"),
+            (dict(split_interval=float("nan")), "split_interval"),
+            (dict(language=Languages.EN), "not JP or KO"),
+            (dict(text=""), "empty"),
+            (dict(text="\n\n", line_split=True), "empty"),
+        ],
+    )
+    def test_rejects_invalid_input_before_loading(self, kwargs, match):
+        model = _dummy_tts_model()
+        with pytest.raises(ValueError, match=match):
+            model.infer_stream(**{"text": "안녕하세요", "language": Languages.KO, **kwargs})
+        assert model.net_g is None
+
+    def test_rejects_onnx_model(self):
+        with pytest.raises(ValueError, match="ONNX"):
+            _dummy_tts_model("dummy.onnx").infer_stream("안녕하세요", language=Languages.KO)
+
+    def test_rejects_non_jp_extra_model(self):
+        with pytest.raises(ValueError, match="JP-Extra"):
+            _dummy_tts_model(version="2.7.0").infer_stream("안녕하세요", language=Languages.KO)
+
+    def test_infer_rejects_unknown_pcm_scale_before_loading(self):
+        model = _dummy_tts_model()
+        with pytest.raises(ValueError, match="pcm_scale"):
+            model.infer("안녕하세요", language=Languages.KO, pcm_scale="peak")
+        assert model.net_g is None
+
+
+class TestAudioStream:
+    def test_close_runs_generator_cleanup_once(self):
+        from style_bert_vits2.tts_model import AudioStream
+
+        closed: list[bool] = []
+
+        def chunks():
+            try:
+                yield np.zeros(3, dtype=np.int16)
+                yield np.ones(3, dtype=np.int16)
+            finally:
+                closed.append(True)
+
+        stream = AudioStream(sample_rate=44100, num_samples=6, chunks=chunks())
+        assert next(iter(stream)).tolist() == [0, 0, 0]
+        stream.close()
+        stream.close()
+        assert closed == [True]
+        assert list(stream) == []
+
+
+class TestConvertTo16BitWav:
+    def test_silence_returns_zeros_without_warning(self):
+        import warnings
+
+        from style_bert_vits2.tts_model import TTSModel
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            out = TTSModel.convert_to_16_bit_wav(np.zeros(10, dtype=np.float32))
+        assert out.dtype == np.int16 and not out.any()
+
+    def test_peak_normalization_unchanged(self):
+        from style_bert_vits2.tts_model import TTSModel
+
+        # 기존 동작: 최대 진폭으로 나눈 뒤 ×32767, 0 방향 절삭 (-16383.5 → -16383)
+        assert TTSModel.convert_to_16_bit_wav(np.array([0.5, -0.25], dtype=np.float32)).tolist() == [32767, -16383]
