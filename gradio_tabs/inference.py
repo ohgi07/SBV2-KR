@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import gradio as gr
+import numpy as np
 
 from style_bert_vits2.constants import (
     DEFAULT_ASSIST_TEXT_WEIGHT,
@@ -205,6 +206,18 @@ def make_non_interactive():
     return gr.update(interactive=False, value="음성 합성 (모델을 로드해 주세요)")
 
 
+# ストリーミング出力はこの秒数以上ためてから Gradio に渡す (upstream の値。実際の再生で確認して調整する)
+STREAM_MIN_CHUNK_SECONDS = 1.0
+
+
+def make_stream_interactive():
+    return gr.update(interactive=True, value="스트리밍 합성")
+
+
+def make_stream_non_interactive():
+    return gr.update(interactive=False, value="스트리밍 합성 (모델을 로드해 주세요)")
+
+
 def gr_util(item):
     if item == "프리셋에서 선택":
         return (gr.update(visible=True), gr.Audio(visible=False, value=None))
@@ -348,6 +361,88 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
         if wrong_tone_message != "":
             message = wrong_tone_message + "\n" + message
         return message, (sr, audio), kata_tone_json_str, False
+
+    def tts_stream_fn(
+        model_name,
+        model_path,
+        text,
+        language,
+        reference_audio_path,
+        sdp_ratio,
+        noise_scale,
+        noise_scale_w,
+        length_scale,
+        line_split,
+        split_interval,
+        assist_text,
+        assist_text_weight,
+        use_assist_text,
+        style,
+        style_weight,
+        use_tone,
+        speaker,
+        pitch_scale,
+        intonation_scale,
+        null_models: dict[int, NullModelParam],
+        force_reload_model: bool,
+    ):
+        # 出力: (情報テキスト, ストリーミング音声, force_reload_model)
+        if pitch_scale != 1.0 or intonation_scale != 1.0:
+            yield "Error: 음높이·억양 조절은 스트리밍 합성에서 지원하지 않습니다. 1.0으로 되돌리거나 일반 음성 합성을 사용해 주세요.", None, gr.skip()
+            return
+        if use_tone:
+            yield "Error: 악센트 조정은 스트리밍 합성에서 지원하지 않습니다. 일반 음성 합성을 사용해 주세요.", None, gr.skip()
+            return
+        model = model_holder.get_model(model_name, model_path)
+        start_time = datetime.datetime.now()
+        try:
+            stream = model.infer_stream(
+                text=text,
+                language=language,
+                reference_audio_path=reference_audio_path,
+                sdp_ratio=sdp_ratio,
+                noise=noise_scale,
+                noise_w=noise_scale_w,
+                length=length_scale,
+                line_split=line_split,
+                split_interval=split_interval,
+                assist_text=assist_text,
+                assist_text_weight=assist_text_weight,
+                use_assist_text=use_assist_text,
+                style=style,
+                style_weight=style_weight,
+                speaker_id=model.spk2id[speaker],
+                null_model_params=null_models,
+                force_reload_model=force_reload_model,
+            )
+        except ValueError as e:
+            logger.error(f"Value error: {e}")
+            yield f"Error: {e}", None, gr.skip()
+            return
+
+        min_samples = int(stream.sample_rate * STREAM_MIN_CHUNK_SECONDS)
+        buffer: list[np.ndarray] = []
+        buffered = total = 0
+        try:
+            for chunk in stream:
+                buffer.append(chunk)
+                buffered += len(chunk)
+                total += len(chunk)
+                if buffered >= min_samples:
+                    yield gr.skip(), (stream.sample_rate, np.concatenate(buffer)), gr.skip()
+                    buffer, buffered = [], 0
+            # 最後の残りは 1 秒未満でも必ず送る
+            if buffered > 0:
+                yield gr.skip(), (stream.sample_rate, np.concatenate(buffer)), gr.skip()
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield f"Error: {e}", gr.skip(), gr.skip()
+            return
+        finally:
+            stream.close()
+
+        duration = (datetime.datetime.now() - start_time).total_seconds()
+        yield f"Success, time: {duration} seconds. 길이 {total / stream.sample_rate:.2f}초 (고정 레벨이라 일반 합성보다 작게 들릴 수 있습니다)", gr.skip(), False
 
     def get_model_files(model_name: str):
         return [str(f) for f in model_holder.model_files_dict[model_name]]
@@ -671,8 +766,12 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                     variant="primary",
                     interactive=False,
                 )
+                with gr.Row():
+                    stream_button = gr.Button("스트리밍 합성 (모델을 로드해 주세요)", variant="secondary", interactive=False, scale=3)
+                    stop_button = gr.Button("중지", variant="stop", scale=1)
                 text_output = gr.Textbox(label="정보")
                 audio_output = gr.Audio(label="결과")
+                stream_audio_output = gr.Audio(label="스트리밍 결과 (고정 레벨)", streaming=True, autoplay=True)
                 with gr.Accordion("텍스트 예시", open=False):
                     gr.Examples(examples, inputs=[text_input, language])
 
@@ -704,7 +803,40 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
                 force_reload_model,
             ],
             outputs=[text_output, audio_output, tone, force_reload_model],
+            concurrency_id="tts",
         )
+
+        # Gradio 6.20 のストリーミング音声出力は前回の値が残っていると 2 回目以降の再生を始めないため、先に空にする
+        stream_event = stream_button.click(lambda: None, outputs=[stream_audio_output]).then(
+            tts_stream_fn,
+            inputs=[
+                model_name,
+                model_path,
+                text_input,
+                language,
+                ref_audio_path,
+                sdp_ratio,
+                noise_scale,
+                noise_scale_w,
+                length_scale,
+                line_split,
+                split_interval,
+                assist_text,
+                assist_text_weight,
+                use_assist_text,
+                style,
+                style_weight,
+                use_tone,
+                speaker,
+                pitch_scale,
+                intonation_scale,
+                null_models,
+                force_reload_model,
+            ],
+            outputs=[text_output, stream_audio_output, force_reload_model],
+            concurrency_id="tts",
+        )
+        stop_button.click(fn=None, cancels=[stream_event])
 
         model_name.change(
             model_holder.update_model_files_for_gradio,
@@ -712,18 +844,17 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
             outputs=[model_path],
         )
 
-        model_path.change(make_non_interactive, outputs=[tts_button])
+        def refresh_models():
+            return *model_holder.update_model_names_for_gradio(), gr.update(interactive=False)
 
-        refresh_button.click(
-            model_holder.update_model_names_for_gradio,
-            outputs=[model_name, model_path, tts_button],
-        )
+        def load_model(model_name: str, model_path_str: str):
+            return *model_holder.get_model_for_gradio(model_name, model_path_str), make_stream_interactive()
 
-        load_button.click(
-            model_holder.get_model_for_gradio,
-            inputs=[model_name, model_path],
-            outputs=[style, tts_button, speaker],
-        )
+        model_path.change(lambda: (make_non_interactive(), make_stream_non_interactive()), outputs=[tts_button, stream_button])
+
+        refresh_button.click(refresh_models, outputs=[model_name, model_path, tts_button, stream_button])
+
+        load_button.click(load_model, inputs=[model_name, model_path], outputs=[style, tts_button, speaker, stream_button])
 
         style_mode.change(
             gr_util,

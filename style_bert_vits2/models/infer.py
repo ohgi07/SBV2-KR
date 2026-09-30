@@ -1,5 +1,7 @@
+from collections.abc import Iterator
 from typing import Any, Optional, Union, cast
 
+import numpy as np
 import torch
 from numpy.typing import NDArray
 
@@ -11,6 +13,7 @@ from style_bert_vits2.models.models import SynthesizerTrn
 from style_bert_vits2.models.models_jp_extra import (
     SynthesizerTrn as SynthesizerTrnJPExtra,
 )
+from style_bert_vits2.models.streaming import ChunkPlan
 from style_bert_vits2.nlp import (
     clean_text_with_given_phone_tone,
     cleaned_text_to_sequence,
@@ -274,3 +277,71 @@ def infer(
             torch.cuda.empty_cache()
 
         return audio
+
+
+def prepare_latent(
+    text: str,
+    style_vec: NDArray[Any],
+    sdp_ratio: float,
+    noise_scale: float,
+    noise_scale_w: float,
+    length_scale: float,
+    sid: int,
+    language: Languages,
+    hps: HyperParameters,
+    net_g: Union[SynthesizerTrn, SynthesizerTrnJPExtra],
+    device: str,
+    assist_text: Optional[str] = None,
+    assist_text_weight: float = 0.7,
+    given_phone: Optional[list[str]] = None,
+    given_tone: Optional[list[int]] = None,
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """
+    ストリーミング推論用に、テキストから Generator (デコーダ) へ入力する潜在変数を生成する。
+    テンソルの準備と乱数の消費順序は infer() と同じ (JP-Extra モデルのみ対応)。
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor, int]: マスク済みの潜在変数 z [1, C, T]、話者埋め込み g、フレーム数 T
+    """
+
+    if not hps.version.endswith("JP-Extra"):
+        raise ValueError("Streaming inference supports JP-Extra models only")
+    with torch.no_grad():
+        _, ja_bert, _, phones, tones, lang_ids = get_text(
+            text, language, hps, device, assist_text=assist_text, assist_text_weight=assist_text_weight,
+            given_phone=given_phone, given_tone=given_tone,
+        )
+        z, y_mask, g, *_ = cast(SynthesizerTrnJPExtra, net_g).infer_input_feature(
+            phones.to(device).unsqueeze(0),
+            torch.LongTensor([phones.size(0)]).to(device),
+            torch.LongTensor([sid]).to(device),
+            tones.to(device).unsqueeze(0),
+            lang_ids.to(device).unsqueeze(0),
+            ja_bert.to(device).unsqueeze(0),
+            style_vec=torch.from_numpy(style_vec).to(device).unsqueeze(0),
+            length_scale=length_scale,
+            sdp_ratio=sdp_ratio,
+            noise_scale=noise_scale,
+            noise_scale_w=noise_scale_w,
+        )
+        return z * y_mask, g, int(y_mask.shape[2])
+
+
+def decode_chunks(
+    net_g: Union[SynthesizerTrn, SynthesizerTrnJPExtra],
+    z: torch.Tensor,
+    g: torch.Tensor,
+    plans: list[ChunkPlan],
+    upsample_factor: int,
+) -> Iterator[NDArray[np.float32]]:
+    """
+    plan_chunks() の計画どおりに潜在変数を区切ってデコーダを実行し、重なり部分を切り落とした音声チャンクを順に返す。
+    torch.no_grad はスレッドごとの状態のため、チャンクごとに有効化し、yield の間は保持しない。
+    """
+
+    for plan in plans:
+        with torch.no_grad():
+            audio = net_g.dec(z[:, :, plan.start : plan.end], g=g)[0, 0]
+            left, right = plan.trim_left * upsample_factor, audio.shape[0] - plan.trim_right * upsample_factor
+            chunk = audio[left:right].float().cpu().numpy()
+        yield chunk

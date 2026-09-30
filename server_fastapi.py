@@ -4,11 +4,12 @@ TODO: server_editor.pyと統合する?
 """
 
 import argparse
+import asyncio
 import os
 import sys
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import unquote
 
 import GPUtil
@@ -17,7 +18,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from scipy.io import wavfile
 
 from config import get_config
@@ -34,6 +35,7 @@ from style_bert_vits2.constants import (
     Languages,
 )
 from style_bert_vits2.logging import logger
+from style_bert_vits2.models.streaming import wav_header
 from style_bert_vits2.nlp import bert_models, onnx_bert_models
 from style_bert_vits2.nlp.japanese import pyopenjtalk_worker as pyopenjtalk
 from style_bert_vits2.nlp.japanese.user_dict import update_dict
@@ -126,6 +128,34 @@ if __name__ == "__main__":
         logger.info(
             f"The maximum length of the text is {limit}. If you want to change it, modify config.yml. Set limit to -1 to remove the limit."
         )
+
+    def resolve_model_and_speaker(
+        model_id: int, model_name: Optional[str], speaker_id: int, speaker_name: Optional[str], style: Optional[str]
+    ) -> tuple[TTSModel, int]:
+        """/voice と /voice/stream で共通のモデル・話者・スタイルの検証 (不正な値は 422 を返す)"""
+        if model_id >= len(model_holder.model_names):  # /models/refresh があるためQuery(le)で表現不可
+            raise_validation_error(f"model_id={model_id} not found", "model_id")
+        if model_name:
+            # load_models() の 処理内容が i の正当性を担保していることに注意
+            model_ids = [i for i, x in enumerate(model_holder.models_info) if x.name == model_name]
+            if not model_ids:
+                raise_validation_error(f"model_name={model_name} not found", "model_name")
+            # 今の実装ではディレクトリ名が重複することは無いはずだが...
+            if len(model_ids) > 1:
+                raise_validation_error(f"model_name={model_name} is ambiguous", "model_name")
+            model_id = model_ids[0]
+        model = loaded_models[model_id]
+        if speaker_name is None:
+            if speaker_id not in model.id2spk.keys():
+                raise_validation_error(f"speaker_id={speaker_id} not found", "speaker_id")
+        else:
+            if speaker_name not in model.spk2id.keys():
+                raise_validation_error(f"speaker_name={speaker_name} not found", "speaker_name")
+            speaker_id = model.spk2id[speaker_name]
+        if style not in model.style2id.keys():
+            raise_validation_error(f"style={style} not found", "style")
+        return model, speaker_id
+
     app = FastAPI()
     allow_origins = config.server_config.origins
     if allow_origins:
@@ -194,6 +224,10 @@ if __name__ == "__main__":
         reference_audio_path: Optional[str] = Query(
             None, description="スタイルを音声ファイルで行う"
         ),
+        pcm_scale: Literal["legacy_peak", "fixed"] = Query(
+            "legacy_peak",
+            description="音量の変換方式。legacy_peak は従来どおり最大振幅で正規化、fixed は正規化しない固定スケール (/voice/stream と同じ音量)",
+        ),
     ):
         """Infer text to speech(テキストから感情付き音声を生成する)"""
         logger.info(
@@ -203,43 +237,7 @@ if __name__ == "__main__":
             logger.warning(
                 "The GET method is not recommended for this endpoint due to various restrictions. Please use the POST method."
             )
-        if model_id >= len(
-            model_holder.model_names
-        ):  # /models/refresh があるためQuery(le)で表現不可
-            raise_validation_error(f"model_id={model_id} not found", "model_id")
-
-        if model_name:
-            # load_models() の 処理内容が i の正当性を担保していることに注意
-            model_ids = [
-                i
-                for i, x in enumerate(model_holder.models_info)
-                if x.name == model_name
-            ]
-            if not model_ids:
-                raise_validation_error(
-                    f"model_name={model_name} not found", "model_name"
-                )
-            # 今の実装ではディレクトリ名が重複することは無いはずだが...
-            if len(model_ids) > 1:
-                raise_validation_error(
-                    f"model_name={model_name} is ambiguous", "model_name"
-                )
-            model_id = model_ids[0]
-
-        model = loaded_models[model_id]
-        if speaker_name is None:
-            if speaker_id not in model.id2spk.keys():
-                raise_validation_error(
-                    f"speaker_id={speaker_id} not found", "speaker_id"
-                )
-        else:
-            if speaker_name not in model.spk2id.keys():
-                raise_validation_error(
-                    f"speaker_name={speaker_name} not found", "speaker_name"
-                )
-            speaker_id = model.spk2id[speaker_name]
-        if style not in model.style2id.keys():
-            raise_validation_error(f"style={style} not found", "style")
+        model, speaker_id = resolve_model_and_speaker(model_id, model_name, speaker_id, speaker_name, style)
         assert style is not None
         if encoding is not None:
             text = unquote(text, encoding=encoding)
@@ -259,11 +257,115 @@ if __name__ == "__main__":
             use_assist_text=bool(assist_text),
             style=style,
             style_weight=style_weight,
+            pcm_scale=pcm_scale,
         )
         logger.success("Audio data generated and sent successfully")
         with BytesIO() as wavContent:
             wavfile.write(wavContent, sr, audio)
             return Response(content=wavContent.getvalue(), media_type="audio/wav")
+
+    @app.api_route("/voice/stream", methods=["GET", "POST"], response_class=StreamingResponse)
+    async def voice_stream(
+        request: Request,
+        text: str = Query(..., min_length=1, max_length=limit, description="セリフ"),
+        encoding: str = Query(None, description="textをURLデコードする(ex, `utf-8`)"),
+        model_name: str = Query(
+            None,
+            description="モデル名(model_idより優先)。model_assets内のディレクトリ名を指定",
+        ),
+        model_id: int = Query(
+            0, description="モデルID。`GET /models/info`のkeyの値を指定ください"
+        ),
+        speaker_name: str = Query(
+            None,
+            description="話者名(speaker_idより優先)。esd.listの2列目の文字列を指定",
+        ),
+        speaker_id: int = Query(
+            0, description="話者ID。model_assets>[model]>config.json内のspk2idを確認"
+        ),
+        sdp_ratio: float = Query(
+            DEFAULT_SDP_RATIO,
+            description="SDP(Stochastic Duration Predictor)/DP混合比。比率が高くなるほどトーンのばらつきが大きくなる",
+        ),
+        noise: float = Query(
+            DEFAULT_NOISE,
+            description="サンプルノイズの割合。大きくするほどランダム性が高まる",
+        ),
+        noisew: float = Query(
+            DEFAULT_NOISEW,
+            description="SDPノイズ。大きくするほど発音の間隔にばらつきが出やすくなる",
+        ),
+        length: float = Query(
+            DEFAULT_LENGTH,
+            description="話速。基準は1で大きくするほど音声は長くなり読み上げが遅まる",
+        ),
+        language: Languages = Query(ln, description="textの言語"),
+        auto_split: bool = Query(DEFAULT_LINE_SPLIT, description="改行で分けて生成"),
+        split_interval: float = Query(
+            DEFAULT_SPLIT_INTERVAL, description="分けた場合に挟む無音の長さ（秒）"
+        ),
+        assist_text: Optional[str] = Query(
+            None,
+            description="このテキストの読み上げと似た声音・感情になりやすくなる。ただし抑揚やテンポ等が犠牲になる傾向がある",
+        ),
+        assist_text_weight: float = Query(
+            DEFAULT_ASSIST_TEXT_WEIGHT, description="assist_textの強さ"
+        ),
+        style: Optional[str] = Query(DEFAULT_STYLE, description="スタイル"),
+        style_weight: float = Query(DEFAULT_STYLE_WEIGHT, description="スタイルの強さ"),
+        reference_audio_path: Optional[str] = Query(
+            None, description="スタイルを音声ファイルで行う"
+        ),
+    ):
+        """
+        Infer text to speech with streaming (テキストから感情付き音声をストリーミング生成する)
+
+        WAV ヘッダの後に 16bit PCM を生成順に送る。音量は正規化しない固定スケール (/voice の pcm_scale=fixed と同じ)。
+        auto_split で複数行を生成する場合は総長が事前に分からないため、ヘッダのサイズ欄は 0xFFFFFFFF になる。
+        """
+        logger.info(
+            f"{request.client.host}:{request.client.port}/voice/stream  { unquote(str(request.query_params) )}"
+        )
+        if request.method == "GET":
+            logger.warning(
+                "The GET method is not recommended for this endpoint due to various restrictions. Please use the POST method."
+            )
+        model, speaker_id = resolve_model_and_speaker(model_id, model_name, speaker_id, speaker_name, style)
+        assert style is not None
+        if encoding is not None:
+            text = unquote(text, encoding=encoding)
+        # 入力の検証と最初の行の潜在変数の生成はここで終わるため、エラーは応答の送信前に返る
+        stream = model.infer_stream(
+            text=text,
+            language=language,
+            speaker_id=speaker_id,
+            reference_audio_path=reference_audio_path,
+            sdp_ratio=sdp_ratio,
+            noise=noise,
+            noise_w=noisew,
+            length=length,
+            line_split=auto_split,
+            split_interval=split_interval,
+            assist_text=assist_text,
+            assist_text_weight=assist_text_weight,
+            use_assist_text=bool(assist_text),
+            style=style,
+            style_weight=style_weight,
+        )
+
+        async def body():
+            # /voice と同じく推論はイベントループのスレッドで行う (pyopenjtalk_worker のソケットなど、ロックのない共有資源を
+            # 複数スレッドから同時に使わないため)。送信だけでは制御が戻らないことがあるため、チャンクごとに明示的に制御を返し、
+            # その間に他のリクエストや切断の検知を進める。応答の終了時 (正常・切断・エラー) には必ずストリームを閉じる
+            try:
+                yield wav_header(stream.sample_rate, stream.num_samples)
+                for chunk in stream:
+                    yield chunk.tobytes()
+                    await asyncio.sleep(0)
+            finally:
+                stream.close()
+
+        return StreamingResponse(body(), media_type="audio/wav")
 
     @app.post("/g2p")
     def g2p(text: str):

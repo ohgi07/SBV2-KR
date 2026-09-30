@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import gc
+import math
 import time
-from collections.abc import Sequence
+from collections.abc import Generator, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 import numpy as np
 import onnxruntime
@@ -25,6 +27,7 @@ from style_bert_vits2.constants import (
 )
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models.hyper_parameters import HyperParameters
+from style_bert_vits2.models.streaming import DecoderGeometry, decoder_geometry, float_to_pcm16_fixed, plan_chunks
 from style_bert_vits2.voice import adjust_voice
 
 
@@ -47,6 +50,25 @@ class NullModelParam(BaseModel):
     pitch: float = Field(ge=0.0, le=1.0)  # 声の高さの重み
     style: float = Field(ge=0.0, le=1.0)  # 話し方の重み
     tempo: float = Field(ge=0.0, le=1.0)  # テンポの重み
+
+
+@dataclass
+class AudioStream:
+    """
+    ストリーミング音声合成の結果。for 文で 16bit PCM (int16) の音声チャンクを生成順に取り出せる。
+    num_samples は全体のサンプル数 (改行分割で複数行を生成する場合は事前に分からないため None)。
+    """
+
+    sample_rate: int
+    num_samples: Optional[int]
+    chunks: Generator[NDArray[np.int16], None, None]
+
+    def __iter__(self) -> Iterator[NDArray[np.int16]]:
+        return self.chunks
+
+    def close(self) -> None:
+        """未消費のチャンク生成を打ち切り、保持している中間テンソルを解放する (複数回呼んでも安全)"""
+        self.chunks.close()
 
 
 class TTSModel:
@@ -329,7 +351,11 @@ class TTSModel:
 
         # Based on: https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.write.html
         if data.dtype in [np.float64, np.float32, np.float16]:  # type: ignore
-            data = data / np.abs(data).max()
+            peak = np.abs(data).max()
+            # 完全な無音はゼロ除算で NaN にならないよう、そのまま 0 を返す
+            if peak == 0:
+                return np.zeros(data.shape, dtype=np.int16)
+            data = data / peak
             data = data * 32767
             data = data.astype(np.int16)
         elif data.dtype == np.int32:
@@ -377,6 +403,8 @@ class TTSModel:
         intonation_scale: float = 1.0,
         null_model_params: Optional[dict[int, NullModelParam]] = None,
         force_reload_model: bool = False,
+        *,
+        pcm_scale: Literal["legacy_peak", "fixed"] = "legacy_peak",
     ) -> tuple[int, NDArray[Any]]:
         """
         テキストから音声を合成する。
@@ -403,10 +431,13 @@ class TTSModel:
             intonation_scale (float, optional): 抑揚の平均からの変化幅 (1.0 から変更すると若干音質が低下する). Defaults to 1.0.
             null_model_params (Optional[dict[int, NullModelParam]], optional): 推論時に使用するヌルモデルの情報。ONNX 推論では無視される。
             force_reload_model (bool, optional): モデルを強制的に再ロードするかどうか. Defaults to False.
+            pcm_scale (Literal["legacy_peak", "fixed"], optional): 16bit PCM への変換方式。legacy_peak は従来どおり最大振幅で正規化し、fixed は正規化せず固定スケールで変換する (infer_stream() と同じ音量). Defaults to "legacy_peak".
         Returns:
             tuple[int, NDArray[Any]]: サンプリングレートと音声データ (16bit PCM)
         """
 
+        if pcm_scale not in ("legacy_peak", "fixed"):
+            raise ValueError(f"pcm_scale must be 'legacy_peak' or 'fixed': {pcm_scale}")
         logger.info(f"Start generating audio data from text:\n{text}")
         # KO は JP-Extra 系アーキテクチャ (単一 BERT 入力) を共用するため許可する
         if language not in ("JP", "KO") and self.hyper_parameters.version.endswith("JP-Extra"):  # fmt: skip
@@ -566,8 +597,145 @@ class TTSModel:
                 pitch_scale=pitch_scale,
                 intonation_scale=intonation_scale,
             )
-        audio = self.convert_to_16_bit_wav(audio)
+        if pcm_scale == "fixed":
+            audio = float_to_pcm16_fixed(audio)
+        else:
+            audio = self.convert_to_16_bit_wav(audio)
         return (self.hyper_parameters.data.sampling_rate, audio)
+
+    def infer_stream(
+        self,
+        text: str,
+        language: Languages = Languages.JP,
+        speaker_id: int = 0,
+        reference_audio_path: Optional[str] = None,
+        sdp_ratio: float = DEFAULT_SDP_RATIO,
+        noise: float = DEFAULT_NOISE,
+        noise_w: float = DEFAULT_NOISEW,
+        length: float = DEFAULT_LENGTH,
+        line_split: bool = DEFAULT_LINE_SPLIT,
+        split_interval: float = DEFAULT_SPLIT_INTERVAL,
+        assist_text: Optional[str] = None,
+        assist_text_weight: float = DEFAULT_ASSIST_TEXT_WEIGHT,
+        use_assist_text: bool = False,
+        style: str = DEFAULT_STYLE,
+        style_weight: float = DEFAULT_STYLE_WEIGHT,
+        given_phone: Optional[list[str]] = None,
+        given_tone: Optional[list[int]] = None,
+        null_model_params: Optional[dict[int, NullModelParam]] = None,
+        force_reload_model: bool = False,
+        *,
+        chunk_size: int = 100,
+        overlap_size: int = 32,
+    ) -> AudioStream:
+        """
+        テキストから音声をストリーミング合成する。デコーダを chunk_size フレームずつ実行し、生成された順に 16bit PCM のチャンクを返す。
+        入力の検証と最初の行の潜在変数の生成はこの呼び出しの時点で完了し、デコードは返り値を反復したときに行われる。
+        音量は正規化しない固定スケール (infer(pcm_scale="fixed") と同じ) で、JP-Extra モデル (JP / KO) の PyTorch 推論のみ対応する。
+        pitch_scale / intonation_scale は波形全体を必要とするため対応しない。
+
+        Args:
+            text 〜 force_reload_model: infer() と同じ
+            chunk_size (int, optional): 1 回にデコードするフレーム数. Defaults to 100.
+            overlap_size (int, optional): 隣り合うチャンクの重なりフレーム数 (偶数、モデルごとの最小値以上). Defaults to 32.
+
+        Returns:
+            AudioStream: サンプリングレート・総サンプル数 (改行分割で複数行の場合は None)・int16 チャンクの反復子
+        """
+
+        from style_bert_vits2.models.infer import prepare_latent
+
+        # モデルに触れる前に、すべての入力を検証する
+        if self.is_onnx_model:
+            raise ValueError("Streaming inference is not supported for ONNX models")
+        if not self.hyper_parameters.version.endswith("JP-Extra"):
+            raise ValueError("Streaming inference supports JP-Extra models only")
+        if language not in ("JP", "KO"):
+            raise ValueError("The model is trained with JP-Extra, but the language is not JP or KO")
+        geometry = decoder_geometry(self.hyper_parameters.model)
+        plan_chunks(1, chunk_size, overlap_size)  # 引数の妥当性だけを先に確認する
+        if overlap_size < geometry.min_overlap:
+            raise ValueError(f"overlap_size must be at least {geometry.min_overlap} for this model: {overlap_size}")
+        if not math.isfinite(split_interval) or split_interval < 0:
+            raise ValueError(f"split_interval must be a finite non-negative number: {split_interval}")
+        # infer() と同じく、改行分割時は空行だけを除外する
+        texts = [t for t in text.split("\n") if t != ""] if line_split else [text]
+        if len(texts) == 0 or texts[0] == "":
+            raise ValueError("Text to synthesize is empty")
+
+        logger.info(f"Start streaming audio generation from text:\n{text}")
+        if reference_audio_path == "":
+            reference_audio_path = None
+        if assist_text == "" or not use_assist_text:
+            assist_text = None
+        if reference_audio_path is None:
+            style_vector = self.get_style_vector(self.style2id[style], style_weight)
+        else:
+            style_vector = self.get_style_vector_from_audio(reference_audio_path, style_weight)
+
+        # infer() と同じく、ヌルモデルの設定はロード時にマージされる
+        self.null_model_params = null_model_params
+        if force_reload_model is True:
+            self.net_g = None
+        if self.net_g is None:
+            self.load()
+        assert self.net_g is not None
+        # 反復の途中で他の呼び出しがモデルを再ロードしても、このストリームは開始時点のモデルを使い続ける
+        net_g = self.net_g
+
+        latent_args: dict[str, Any] = dict(
+            style_vec=style_vector, sdp_ratio=sdp_ratio, noise_scale=noise, noise_scale_w=noise_w, length_scale=length,
+            sid=speaker_id, language=language, hps=self.hyper_parameters, net_g=net_g, device=self.device,
+            assist_text=assist_text, assist_text_weight=assist_text_weight,
+        )
+        # infer() と同じく、改行分割時は given_phone / given_tone を無視する
+        if line_split:
+            first = prepare_latent(texts[0], **latent_args)
+        else:
+            first = prepare_latent(texts[0], **latent_args, given_phone=given_phone, given_tone=given_tone)
+        num_samples = first[2] * geometry.upsample_factor if len(texts) == 1 else None
+        chunks = self._iter_stream_chunks(texts, first, latent_args, geometry, chunk_size, overlap_size, split_interval)
+        return AudioStream(self.hyper_parameters.data.sampling_rate, num_samples, chunks)
+
+    def _iter_stream_chunks(
+        self,
+        texts: list[str],
+        first: tuple[Any, Any, int],
+        latent_args: dict[str, Any],
+        geometry: DecoderGeometry,
+        chunk_size: int,
+        overlap_size: int,
+        split_interval: float,
+    ) -> Generator[NDArray[np.int16], None, None]:
+        """infer_stream() の反復本体。行ごとに潜在変数を用意し、デコードしたチャンクを 16bit PCM に変換して返す。"""
+
+        import torch
+
+        from style_bert_vits2.models.infer import decode_chunks, prepare_latent
+
+        start_time = time.time()
+        silence = np.zeros(int(self.hyper_parameters.data.sampling_rate * split_interval), dtype=np.int16)
+        pending: Optional[tuple[Any, Any, int]] = first
+        del first  # 最初の行の潜在変数を、その行のデコードが終わったら解放できるようにする
+        try:
+            for i, text in enumerate(texts):
+                z, g, num_frames = pending if pending is not None else prepare_latent(text, **latent_args)
+                pending = None
+                plans = plan_chunks(num_frames, chunk_size, overlap_size)
+                for audio in decode_chunks(latent_args["net_g"], z, g, plans, geometry.upsample_factor):
+                    yield float_to_pcm16_fixed(audio)
+                del z, g
+                if i != len(texts) - 1 and len(silence) > 0:
+                    yield silence
+        except GeneratorExit:
+            logger.info("Streaming audio generation was closed before completion")
+            raise
+        except Exception:
+            logger.exception("Error occurred during streaming audio generation")
+            raise
+        logger.info(f"Streaming audio generated successfully ({time.time() - start_time:.2f}s)")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 class TTSModelInfo(BaseModel):
