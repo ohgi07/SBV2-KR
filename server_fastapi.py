@@ -99,15 +99,14 @@ if __name__ == "__main__":
 
     # 事前に BERT モデル/トークナイザーをロードしておく
     ## ここでロードしなくても必要になった際に自動ロードされるが、時間がかかるため事前にロードしておいた方が体験が良い
-    ## 英語や中国語で音声合成するユースケースは限られていることから、VRAM 節約のため日本語の BERT モデル/トークナイザーのみロードする
-    bert_models.load_model(Languages.JP, device_map=device)
-    bert_models.load_tokenizer(Languages.JP)
+    ## VRAM 節約のため、config.yml の server.language で指定された言語の BERT モデル/トークナイザーのみロードする
+    preload_language = Languages(ln)
+    bert_models.load_model(preload_language, device_map=device)
+    bert_models.load_tokenizer(preload_language)
     # VRAM 節約のため、既定では ONNX 版 BERT モデル/トークナイザーは事前ロードしない
     if args.preload_onnx_bert:
-        onnx_bert_models.load_model(
-            Languages.JP, onnx_providers=torch_device_to_onnx_providers(device)
-        )
-        onnx_bert_models.load_tokenizer(Languages.JP)
+        onnx_bert_models.load_model(preload_language, onnx_providers=torch_device_to_onnx_providers(device))
+        onnx_bert_models.load_tokenizer(preload_language)
 
     model_dir = Path(args.dir)
     model_holder = TTSModelHolder(
