@@ -54,12 +54,12 @@ pip install -r requirements.txt
 > [!NOTE]
 > 한국어용 추가 G2P 의존성은 없습니다 (`g2pkk`/`eunjeon`/`mecab` 불필요). 발음 규칙·테스트만 쓸 때는 torch 없이도 동작합니다.
 
-### 2. BERT 모델 다운로드
+### 2. 모델 다운로드
 
-한국어 문맥 임베딩용 BERT를 `bert/` 아래에 내려받습니다. `bert/bert_models.json`에 `klue-roberta-large`가 등록되어 있어 아래 명령으로 자동 준비됩니다.
+한국어 BERT(`klue-roberta-large`)와 학습용 사전학습 모델(JP-Extra 베이스, WavLM)을 내려받습니다. `--skip_default_models`는 한국어에 쓰이지 않는 일본어 기본 음성 모델을 건너뜁니다.
 
 ```bash
-python initialize.py
+python initialize.py --skip_default_models
 ```
 
 설치가 끝나면 `python app.py`로 WebUI를 실행할 수 있습니다.
