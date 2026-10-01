@@ -31,7 +31,7 @@ Style-Bert-VITS2에 한국어(`KO`) 학습·추론을 추가한 포트입니다.
 - [숫자·단위·알파벳 정규화](style_bert_vits2/nlp/korean/normalizer.py) — 고유어/한자어 수사 구분
 - [`klue/roberta-large`](https://huggingface.co/klue/roberta-large) 기반 한국어 BERT 지원
 - JP-Extra 아키텍처 그대로 사용 — [기존 JP 모델과 체크포인트 호환](#4-기존-모델과의-호환성)
-- [JP → KO warm-start 임베딩 초기화 도구](warm_start_ko.py)
+- [JP → KO warm-start 임베딩 초기화](style_bert_vits2/nlp/korean/warm_start.py) — 일본어 사전학습 모델에서 학습을 시작하면 자동 적용
 - [CER 기반 자동 평가](speech_cer.py) · [코퍼스 커버리지 검사](analyze_corpus.py) 도구 포함
 
 ## 설치
@@ -236,9 +236,9 @@ WordPiece 서브워드 토크나이저는 중국어처럼 토큰과 문자가 1:
 
 ### 4. 기존 모델과의 호환성
 
-한국어 심볼·톤·언어 ID는 모두 기존 테이블 뒤에 추가되므로, 기존 JP/EN/ZH 심볼의 인덱스는 변경되지 않습니다. KO 추가 이전에 학습된 체크포인트를 로드하면 임베딩 테이블의 기존 행을 그대로 복사하고 새 행만 초기값으로 두는 호환 처리가 자동으로 적용됩니다 (`checkpoints.py` / `safetensors.py`).
+한국어 심볼·톤·언어 ID는 모두 기존 테이블 뒤에 추가되므로, 기존 JP/EN/ZH 심볼의 인덱스는 변경되지 않습니다. KO 추가 이전에 학습된 체크포인트를 로드하면 임베딩 테이블의 기존 행을 그대로 복사해 확장하는 호환 처리가 자동으로 적용됩니다 (`checkpoints.py` / `safetensors.py`).
 
-기존 일본어 모델은 그대로 동작합니다. 일본어 사전학습 모델에서 한국어를 파인튜닝하는 것도 가능합니다 (단, 한국어 음소 임베딩은 처음부터 학습됩니다).
+기존 일본어 모델은 그대로 동작합니다. 일본어 사전학습 모델에서 한국어를 파인튜닝할 때는 한국어 음소·톤·언어 임베딩의 새 행이 발음이 비슷한 일본어 행의 가중 결합으로 자동 초기화되어(warm-start, [`warm_start.py`](style_bert_vits2/nlp/korean/warm_start.py)), 무작위 초기화보다 훨씬 빨리 수렴합니다.
 
 ## 제한 사항
 

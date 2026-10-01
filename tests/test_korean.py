@@ -968,27 +968,21 @@ class TestClauseBoundary:
 
 
 # ============================================================
-# warm_start_ko (KO 임베딩 초기화 매핑). torch가 필요해 각 테스트 안에서 임포트한다
+# warm-start (KO 임베딩 초기화 매핑). torch가 필요해 각 테스트 안에서 임포트한다
 # ============================================================
 
 
 class TestWarmStartMap:
     def test_covers_all_46_ko_symbols(self):
-        # 가중치 합 = 1, 소스 = 베이스 구간 JP 심볼 조건은 warm_start_ko 임포트 시점에 검증된다
-        from warm_start_ko import KO_JP_INIT_MAP
+        # 가중치 합 = 1, 소스 = 베이스 구간 JP 심볼 조건은 warm_start 임포트 시점에 검증된다
+        from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
 
         assert set(KO_JP_INIT_MAP.keys()) == set(KO_SYMBOLS)
         assert len(KO_JP_INIT_MAP) == 46
 
-    def test_symbol_to_idx_캐시(self):
-        from warm_start_ko import NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
-
-        assert SYMBOL_TO_IDX == {s: i for i, s in enumerate(SYMBOLS)}
-        assert NUM_BASE_SYMBOLS == 112
-
     def test_확정_매핑_스팟체크(self):
         # 스펙 확정 테이블의 대표값 회귀망
-        from warm_start_ko import KO_JP_INIT_MAP
+        from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
 
         expected = {
             "ᄅ": [("r", 1.0)],
@@ -1008,119 +1002,110 @@ class TestWarmStartMap:
         }
         assert {ko: KO_JP_INIT_MAP[ko] for ko in expected} == expected
 
+    def test_음소_매핑은_KO_행_전체를_채운다(self):
+        from style_bert_vits2.nlp.korean.warm_start import KO_WARM_START_MAPS
 
-class TestBuildEmbedding:
+        assert set(KO_WARM_START_MAPS["enc_p.emb.weight"].keys()) == set(range(112, len(SYMBOLS)))
+
+
+class TestWarmStartExpansion:
+    """KO 추가 전 체크포인트를 로드할 때 KO 임베딩 행이 JP 행의 가중 결합으로 채워지는지 검증"""
+
+    IDX = {s: i for i, s in enumerate(SYMBOLS)}
+
     @pytest.fixture(autouse=True)
     def _setup(self):
         import torch
 
-        from warm_start_ko import build_embedding
+        from style_bert_vits2.models.utils.checkpoints import expand_embedding_if_needed
 
         torch.manual_seed(0)
-        self.torch, self.build = torch, build_embedding
-        self.base = torch.randn(5, 4, dtype=torch.float32)
+        self.torch, self.expand = torch, expand_embedding_if_needed
 
-    def test_기존_행_보존(self):
-        out = self.build(self.base, 7, {5: [(0, 1.0)], 6: [(1, 0.5), (2, 0.5)]})
-        assert out.shape == (7, 4)
-        assert self.torch.equal(out[:5], self.base)
+    def _expand(self, key: str, num_saved: int, num_rows: int):
+        saved, model = self.torch.randn(num_saved, 8), self.torch.randn(num_rows, 8)
+        return saved, model, self.expand(key, saved, model)
 
-    def test_단일_매핑은_소스와_정확히_일치(self):
-        # w=1.0이면 소스 행과 비트 단위로 동일해야 함
-        out = self.build(self.base, 6, {5: [(2, 1.0)]})
-        assert self.torch.equal(out[5], self.base[2])
+    def test_음소_KO_행은_JP_행_가중_결합(self):
+        saved, _, out = self._expand("enc_p.emb.weight", 112, len(SYMBOLS))
+        assert self.torch.equal(out[:112], saved)
+        # 단일 매핑(w=1.0)은 소스 행과 비트 단위로 동일
+        assert self.torch.equal(out[self.IDX["ᄅ"]], saved[self.IDX["r"]])
+        expected = 0.75 * saved[self.IDX["s"]] + 0.25 * saved[self.IDX["sh"]]
+        assert self.torch.allclose(out[self.IDX["ᄉ"]], expected)
 
-    def test_가중_결합_수치(self):
-        out = self.build(self.base, 6, {5: [(1, 0.3), (3, 0.7)]})
-        assert self.torch.allclose(out[5], 0.3 * self.base[1] + 0.7 * self.base[3])
+    def test_톤_KO_행은_JP_저고_평균(self):
+        saved, _, out = self._expand("enc_p.tone_emb.weight", NUM_TONES - 1, NUM_TONES)
+        jp = LANGUAGE_TONE_START_MAP["JP"]
+        assert self.torch.allclose(out[LANGUAGE_TONE_START_MAP["KO"]], 0.5 * saved[jp] + 0.5 * saved[jp + 1])
 
-    @pytest.mark.parametrize(
-        "target_rows, init_map",
-        [
-            (6, {4: [(0, 1.0)]}),  # 4는 기존 행
-            (6, {6: [(0, 1.0)]}),  # 6은 target_rows 밖
-            (7, {5: [(0, 1.0)]}),  # 신규 행 6 누락
-            # 소스는 기존 행(0~4)이어야 한다 (IndexError로 죽지 않고 명시적 ValueError)
-            (6, {5: [(5, 1.0)]}),
-            (6, {5: [(-1, 1.0)]}),
-            (3, {}),  # target_rows가 기존 행수보다 작음
-        ],
-    )
-    def test_잘못된_매핑은_에러(self, target_rows, init_map):
-        with pytest.raises(ValueError):
-            self.build(self.base, target_rows, init_map)
+    def test_언어_KO_행은_JP_행_복사(self):
+        saved, _, out = self._expand("enc_p.language_emb.weight", 3, 4)
+        assert self.torch.equal(out[LANGUAGE_ID_MAP["KO"]], saved[LANGUAGE_ID_MAP["JP"]])
 
-    def test_KO_PHONEME_INIT_MAP_상수는_실제_심볼_인덱스(self):
-        from warm_start_ko import KO_PHONEME_INIT_MAP, NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
+    def test_저장된_KO_행은_덮어쓰지_않는다(self):
+        saved, _, out = self._expand("enc_p.emb.weight", 120, len(SYMBOLS))
+        assert self.torch.equal(out[:120], saved)
+        assert self.torch.equal(out[self.IDX["ᆼ"]], saved[self.IDX["N"]])
 
-        assert set(KO_PHONEME_INIT_MAP.keys()) == set(range(NUM_BASE_SYMBOLS, len(SYMBOL_TO_IDX)))
-        assert KO_PHONEME_INIT_MAP[SYMBOL_TO_IDX["ᄅ"]] == [(SYMBOL_TO_IDX["r"], 1.0)]
+    def test_소스_JP_행이_없으면_초기값_유지(self):
+        # 언어 테이블에 ZH 행만 있으면 소스(JP=1)가 범위 밖
+        _, model, out = self._expand("enc_p.language_emb.weight", 1, 4)
+        assert self.torch.equal(out[1:], model[1:])
+
+    def test_매핑이_없는_키는_초기값_유지(self):
+        _, model, out = self._expand("emb.weight", 112, len(SYMBOLS))
+        assert self.torch.equal(out[112:], model[112:])
 
 
-class TestWarmStartConvert:
-    @pytest.fixture(autouse=True)
-    def _tmp(self, tmp_path):
-        self.tmp_path = tmp_path
+class TestWarmStartOnLoad:
+    """실제 로드 경로(사전학습 G_0 safetensors, KO 추가 전 .pth 이어 학습)에서 자동 적용되는지 검증"""
 
-    def _fake_g0(self, num_symbols=112, num_tones=12, num_langs=3):
-        # 실제 G_0의 임베딩 3키 + 무관 텐서 1개를 가진 최소 safetensors를 만든다
+    IDX = {s: i for i, s in enumerate(SYMBOLS)}
+
+    @staticmethod
+    def _model(n_symbols: int):
+        import torch
+
+        model = torch.nn.Module()
+        model.enc_p = torch.nn.Module()
+        model.enc_p.emb = torch.nn.Embedding(n_symbols, 4)
+        return model
+
+    def test_safetensors_로드(self, tmp_path):
         import torch
         from safetensors.torch import save_file
 
-        tensors = {
-            "enc_p.emb.weight": torch.randn(num_symbols, 8),
-            "enc_p.tone_emb.weight": torch.randn(num_tones, 8),
-            "enc_p.language_emb.weight": torch.randn(num_langs, 8),
-            "dec.conv_pre.weight": torch.randn(4, 4),
-        }
-        path = self.tmp_path / "G_0.safetensors"
-        save_file(tensors, str(path), metadata={"iteration": "0"})
-        return path, tensors
+        from style_bert_vits2.models.utils.safetensors import load_safetensors
 
-    def test_변환_결과_행수와_초기화(self):
+        saved = torch.randn(112, 4)
+        path = tmp_path / "G_0.safetensors"
+        save_file({"enc_p.emb.weight": saved}, str(path))
+        model, _ = load_safetensors(path, self._model(len(SYMBOLS)))
+
+        emb = model.enc_p.emb.weight.detach()
+        assert torch.equal(emb[:112], saved)
+        assert torch.equal(emb[self.IDX["ᄅ"]], saved[self.IDX["r"]])
+
+    def test_pth_이어_학습(self, tmp_path):
         import torch
-        from safetensors import safe_open
 
-        from warm_start_ko import SYMBOL_TO_IDX, convert
+        from style_bert_vits2.models.utils.checkpoints import load_checkpoint, save_checkpoint
 
-        in_path, tensors = self._fake_g0()
-        out_path = self.tmp_path / "G_0_ko.safetensors"
-        convert(in_path, out_path)
+        old_model = self._model(112)
+        old_opt = torch.optim.AdamW(old_model.parameters())
+        old_model.enc_p.emb(torch.tensor([0, 1, 2])).sum().backward()
+        old_opt.step()
+        path = tmp_path / "G_100.pth"
+        save_checkpoint(old_model, old_opt, 1e-4, 1, path)
+        saved = old_model.enc_p.emb.weight.detach().clone()
 
-        with safe_open(str(out_path), framework="pt") as f:
-            emb = f.get_tensor("enc_p.emb.weight")
-            tone = f.get_tensor("enc_p.tone_emb.weight")
-            lang = f.get_tensor("enc_p.language_emb.weight")
-            dec = f.get_tensor("dec.conv_pre.weight")
-            assert f.metadata() == {"iteration": "0"}
+        new_model = self._model(len(SYMBOLS))
+        new_opt = torch.optim.AdamW(new_model.parameters())
+        load_checkpoint(path, new_model, new_opt)
 
-        assert emb.shape[0] == len(SYMBOLS)  # 158
-        assert tone.shape[0] == NUM_TONES  # 13
-        assert lang.shape[0] == 4
-        # identity: ᄅ 행 == r 행, 언어 KO 행 == JP 행
-        assert torch.equal(emb[SYMBOL_TO_IDX["ᄅ"]], tensors["enc_p.emb.weight"][SYMBOL_TO_IDX["r"]])  # fmt: skip
-        assert torch.equal(lang[3], tensors["enc_p.language_emb.weight"][1])
-        # 가중: 톤 KO 행 == JP 두 행 평균
-        jp_start = LANGUAGE_TONE_START_MAP["JP"]
-        expected = 0.5 * tensors["enc_p.tone_emb.weight"][jp_start] + 0.5 * tensors["enc_p.tone_emb.weight"][jp_start + 1]  # fmt: skip
-        assert torch.allclose(tone[LANGUAGE_TONE_START_MAP["KO"]], expected)
-        # 무관 텐서는 그대로
-        assert torch.equal(dec, tensors["dec.conv_pre.weight"])
-
-    def test_이미_확장된_파일은_에러(self):
-        from warm_start_ko import convert
-
-        in_path, _ = self._fake_g0(num_symbols=158, num_tones=13, num_langs=4)
-        with pytest.raises(ValueError, match="이미"):
-            convert(in_path, self.tmp_path / "out.safetensors")
-
-    def test_생성자_체크포인트가_아니면_에러(self):
-        import torch
-        from safetensors.torch import save_file
-
-        from warm_start_ko import convert
-
-        path = self.tmp_path / "D_0.safetensors"
-        save_file({"disc.conv.weight": torch.randn(4, 4)}, str(path))
-        with pytest.raises(ValueError, match="G_0"):
-            convert(path, self.tmp_path / "out.safetensors")
+        emb = new_model.enc_p.emb.weight.detach()
+        assert torch.equal(emb[self.IDX["ᄅ"]], saved[self.IDX["r"]])
+        # optimizer state의 KO 행은 warm-start 대상이 아니라 0 (새 파라미터의 초기 state)
+        exp_avg = new_opt.state_dict()["state"][0]["exp_avg"]
+        assert torch.equal(exp_avg[112:], torch.zeros(len(SYMBOLS) - 112, 4))

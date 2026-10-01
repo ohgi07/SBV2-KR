@@ -7,6 +7,7 @@ from typing import Any, Optional, Union
 import torch
 
 from style_bert_vits2.logging import logger
+from style_bert_vits2.nlp.korean.warm_start import warm_start_new_rows
 
 
 def expand_embedding_if_needed(
@@ -15,8 +16,9 @@ def expand_embedding_if_needed(
     """
     シンボルテーブル拡張 (韓国語対応など) の後方互換処理。
     保存済みテンソルの 0 次元目だけがモデルより小さい場合 (音素・トーン・言語の
-    埋め込みテーブルが拡張された場合)、既存の行を先頭にコピーし、新規行は
-    モデルの初期値のままにした拡張済みテンソルを返す。
+    埋め込みテーブルが拡張された場合)、既存の行を先頭にコピーした拡張済みテンソルを返す。
+    新規行のうち韓国語の音素・トーン・言語の行は JP 行の加重結合で warm-start 初期化し
+    (nlp/korean/warm_start.py)、それ以外はモデルの初期値のままにする。
     それ以外の形状不一致の場合は None を返す。
     """
     if (
@@ -26,9 +28,13 @@ def expand_embedding_if_needed(
     ):
         expanded = model_tensor.clone()
         expanded[: saved_tensor.shape[0]] = saved_tensor
+        if warm_start_new_rows(key, expanded, saved_tensor.shape[0]):
+            new_rows = "KO rows are warm-started from JP rows"
+        else:
+            new_rows = "new rows keep their initial values"
         logger.info(
             f"Expanded {key} from {tuple(saved_tensor.shape)} to "
-            f"{tuple(model_tensor.shape)} (new rows keep their initial values)"
+            f"{tuple(model_tensor.shape)} ({new_rows})"
         )
         return expanded
     return None
