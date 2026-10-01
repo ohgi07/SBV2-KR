@@ -5,11 +5,25 @@
 BERT モデルの重みは不要 (トークナイザーのみ利用する)。
 """
 
+from pathlib import Path
+
 import pytest
 
+import analyze_corpus
+from speech_cer import (
+    drop_hallucinated_segments,
+    korean_cer,
+    levenshtein,
+    text_to_pronounced_units,
+)
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.nlp import clean_text, cleaned_text_to_sequence
-from style_bert_vits2.nlp.korean.g2p import g2p
+from style_bert_vits2.nlp.korean.g2p import g2p, to_pronunciation
+from style_bert_vits2.nlp.korean.morph import (
+    apply_morph_rules,
+    clause_boundary_spaces,
+    tokenize,
+)
 from style_bert_vits2.nlp.korean.normalizer import normalize_text, read_number
 from style_bert_vits2.nlp.korean.pronounce import pronounce
 from style_bert_vits2.nlp.symbols import (
@@ -20,6 +34,13 @@ from style_bert_vits2.nlp.symbols import (
     PUNCTUATION_SYMBOLS,
     SYMBOLS,
 )
+
+
+def _bert_feature_private(name: str):
+    """bert_feature.py의 모듈 전용 (__ 접두) 함수를 꺼낸다 (transformers 임포트를 테스트 안으로 미룬다)"""
+    import style_bert_vits2.nlp.korean.bert_feature as bf
+
+    return getattr(bf, name)
 
 
 class TestSymbols:
@@ -273,8 +294,6 @@ class TestMorphRules:
         ],
     )
     def test_exception_dictionary(self, orig: str, expected: str):
-        from style_bert_vits2.nlp.korean.morph import apply_morph_rules
-
         assert pronounce(apply_morph_rules(orig)) == expected
 
     @pytest.mark.parametrize(
@@ -319,31 +338,16 @@ class TestMorphRules:
     )
     def test_kiwi_rules(self, orig: str, expected: str):
         pytest.importorskip("kiwipiepy")
-        from style_bert_vits2.nlp.korean.morph import apply_morph_rules
-
         assert pronounce(apply_morph_rules(orig)) == expected
 
-    def test_exception_entries_preserve_length(self):
-        from style_bert_vits2.nlp.korean.morph import PRONUNCIATION_EXCEPTIONS
-
-        for orig, replaced in PRONUNCIATION_EXCEPTIONS.items():
-            assert len(orig) == len(replaced), f"{orig} -> {replaced}"
-
     def test_morph_rules_preserve_length(self):
-        from style_bert_vits2.nlp.korean.morph import apply_morph_rules
-
+        # 예외 사전 항목의 문자 수 보존은 morph.py 임포트 시점에 검증된다
         text = "맛있는 김치찌개와 솜이불, 갈 데가 없는 한여름의 서울역!"
         assert len(apply_morph_rules(text)) == len(text)
 
     def test_shared_tokens_match_internal_analysis(self):
         """분석 결과를 넘겨받아도 각자 분석할 때와 같은 결과여야 한다 (발화당 1회로 줄이는 경로)"""
         pytest.importorskip("kiwipiepy")
-        from style_bert_vits2.nlp.korean.morph import (
-            apply_morph_rules,
-            clause_boundary_spaces,
-            tokenize,
-        )
-
         text = "이곳에 들어오시면 안 됩니다. 갈 데가 없는 한여름의 서울역!"
         tokens = tokenize(text)
         assert apply_morph_rules(text, tokens) == apply_morph_rules(text)
@@ -482,14 +486,11 @@ class TestBertModelDtype:
     """
 
     def test_jp_bert_loads_as_float32(self):
-        from pathlib import Path
-
         import torch
 
         jp_dir = Path(__file__).parent.parent / "bert" / "deberta-v2-large-japanese-char-wwm"
         if not (jp_dir / "model.safetensors").exists():
             pytest.skip("JP BERT weights not found")
-        from style_bert_vits2.constants import Languages
         from style_bert_vits2.nlp import bert_models
 
         model = bert_models.load_model(Languages.JP, str(jp_dir))
@@ -507,12 +508,8 @@ class TestRobertaCompatibility:
     ここでは KO 経路が RoBERTa クラスで実際に動作することをコードレベルで固定する。
     """
 
-    KLUE_DIR = None  # set in setup
-
     @pytest.fixture()
     def klue_tokenizer_dir(self):
-        from pathlib import Path
-
         path = Path(__file__).parent.parent / "bert" / "klue-roberta-large"
         if not (path / "vocab.txt").exists():
             pytest.skip("klue-roberta-large tokenizer files not found")
@@ -586,13 +583,9 @@ class TestRobertaCompatibility:
     def test_roberta_max_length_is_dynamic(self, klue_tokenizer_dir):
         """max_length がトークナイザーから取得され、klue の 512 が活かされる"""
         transformers = pytest.importorskip("transformers")
-        import style_bert_vits2.nlp.korean.bert_feature as bf
-
-        get_max_length = getattr(bf, "__get_max_length")
+        get_max_length = _bert_feature_private("__get_max_length")
         klue_tokenizer = transformers.AutoTokenizer.from_pretrained(klue_tokenizer_dir)
         assert get_max_length(klue_tokenizer) == 512
-
-        from pathlib import Path
 
         kcbert_dir = Path(__file__).parent.parent / "bert" / "kcbert-large"
         if (kcbert_dir / "vocab.txt").exists():
@@ -608,9 +601,7 @@ class TestRobertaCompatibility:
     def test_truncation_keeps_char_map_in_range(self, klue_tokenizer_dir):
         """入力上限を超えるテキストでも文字→トークン対応が範囲内に収まる"""
         transformers = pytest.importorskip("transformers")
-        import style_bert_vits2.nlp.korean.bert_feature as bf
-
-        build = getattr(bf, "__build_char_to_token_map")
+        build = _bert_feature_private("__build_char_to_token_map")
         tokenizer = transformers.AutoTokenizer.from_pretrained(klue_tokenizer_dir)
         long_text = normalize_text("오늘은 정말 길고 긴 하루였다. " * 100)
         inputs = tokenizer(long_text, return_offsets_mapping=True, truncation=True, max_length=64)  # fmt: skip
@@ -622,8 +613,6 @@ class TestRobertaCompatibility:
     def test_roberta_real_weights_end_to_end(self, klue_tokenizer_dir):
         """実際の klue/roberta-large の重みでの統合検証 (重みがある場合のみ)"""
         transformers = pytest.importorskip("transformers")
-        from pathlib import Path
-
         weights = Path(klue_tokenizer_dir) / "pytorch_model.bin"
         if not weights.exists():
             pytest.skip("klue-roberta-large weights not found")
@@ -749,33 +738,25 @@ class TestG2PPronunciation:
 
 
 class TestCER:
-    def test_identity(self):
-        from style_bert_vits2.nlp.korean.cer import korean_cer
-
-        assert korean_cer("안녕하세요", "안녕하세요") == 0.0
-
-    def test_orthography_vs_pronunciation_equivalence(self):
-        """발음이 같으면 표기가 달라도 CER 0 (ASR 표기 흔들림 무시)"""
-        from style_bert_vits2.nlp.korean.cer import korean_cer
-
-        assert korean_cer("맛있다", "마싣따") == 0.0
-        assert korean_cer("같이", "가치") == 0.0
-        assert korean_cer("신라", "실라") == 0.0
-
-    def test_number_normalization_equivalence(self):
-        """숫자 표기와 한글 표기가 같은 읽기면 CER 0"""
-        from style_bert_vits2.nlp.korean.cer import korean_cer
-
-        assert korean_cer("사과 3개", "사과 세 개") == 0.0
-
-    def test_spacing_and_punctuation_ignored(self):
-        from style_bert_vits2.nlp.korean.cer import korean_cer
-
-        assert korean_cer("안녕하세요!", "안녕 하세요") == 0.0
+    @pytest.mark.parametrize(
+        "reference, hypothesis",
+        [
+            ("안녕하세요", "안녕하세요"),
+            ("", ""),
+            # 발음이 같으면 표기가 달라도 CER 0 (ASR 표기 흔들림 무시)
+            ("맛있다", "마싣따"),
+            ("같이", "가치"),
+            ("신라", "실라"),
+            # 숫자 표기와 한글 표기가 같은 읽기면 CER 0
+            ("사과 3개", "사과 세 개"),
+            # 띄어쓰기·구두점은 무시
+            ("안녕하세요!", "안녕 하세요"),
+        ],
+    )
+    def test_equivalent_texts_score_zero(self, reference: str, hypothesis: str):
+        assert korean_cer(reference, hypothesis) == 0.0
 
     def test_error_rates(self):
-        from style_bert_vits2.nlp.korean.cer import korean_cer
-
         # 완전 불일치는 1.0 근처, 부분 오류는 0과 1 사이
         assert korean_cer("가나다", "가나라") > 0.0
         assert korean_cer("가나다", "가나다라") > 0.0
@@ -786,20 +767,21 @@ class TestCER:
         jamo = korean_cer("강", "간", unit="jamo")
         syllable = korean_cer("강", "간", unit="syllable")
         assert jamo < syllable == 1.0
-
-    def test_empty_reference(self):
-        from style_bert_vits2.nlp.korean.cer import korean_cer
-
-        assert korean_cer("", "") == 0.0
+        # 참조가 비어 있고 가설이 있으면 1.0
         assert korean_cer("...", "가나다") == 1.0
 
     def test_uses_g2p_pronunciation_path(self):
         """합성에 쓰인 것과 같은 발음으로 재야 한다 (절 경계에서 어절 경계 규칙이 멈춘 발음)"""
         pytest.importorskip("kiwipiepy")
-        from style_bert_vits2.nlp.korean.cer import text_to_pronounced_units
-
         units = text_to_pronounced_units("이곳에 들어오시면 안 됩니다", unit="syllable")
         assert "".join(units) == "이고세드러오시면안됨니다"  # 절 경계를 무시하면 드러오시며난
+
+    def test_levenshtein(self):
+        assert levenshtein("abc", "abc") == 0
+        assert levenshtein("abc", "abd") == 1
+        assert levenshtein("abc", "ab") == 1
+        assert levenshtein("", "abc") == 3
+        assert levenshtein("kitten", "sitting") == 3
 
 
 class TestHallucinationFilter:
@@ -811,8 +793,6 @@ class TestHallucinationFilter:
         return SimpleNamespace(start=start, end=end, text=text)
 
     def test_drops_hallucination(self):
-        from style_bert_vits2.nlp.korean.cer import drop_hallucinated_segments
-
         # 뒤의 둘은 문구가 서로 다르다 — 블랙리스트가 아니라 속도로 걸러야 둘 다 잡힌다
         segs = [
             self._seg(0.30, 3.98, "오래 쪼그리고 앉아 있었더니 다리에 쥐가 나요."),
@@ -822,8 +802,6 @@ class TestHallucinationFilter:
         assert [s.text for s in drop_hallucinated_segments(segs)] == [segs[0].text]
 
     def test_keeps_real_speech(self):
-        from style_bert_vits2.nlp.korean.cer import drop_hallucinated_segments
-
         segs = [
             self._seg(0.00, 2.36, "삶은 달걀 있어요?"),
             self._seg(2.36, 10.90, "어제 저녁에 친구를 만나서 이런저런 이야기를 나누다 보니 자정이 넘었습니다."),
@@ -832,20 +810,9 @@ class TestHallucinationFilter:
         assert len(drop_hallucinated_segments(segs)) == 3
         assert drop_hallucinated_segments([]) == []
 
-    def test_levenshtein(self):
-        from style_bert_vits2.nlp.korean.cer import levenshtein
-
-        assert levenshtein("abc", "abc") == 0
-        assert levenshtein("abc", "abd") == 1
-        assert levenshtein("abc", "ab") == 1
-        assert levenshtein("", "abc") == 3
-        assert levenshtein("kitten", "sitting") == 3
-
 
 class TestCorpusAnalyzer:
     def test_analyze(self, tmp_path):
-        import analyze_corpus
-
         esd = tmp_path / "esd.list"
         esd.write_text(
             "a.wav|spk|KO|3일 전, 배가 고팠다.\n"
@@ -880,8 +847,6 @@ class TestCorpusAnalyzer:
 
     def test_measures_audio_relative_to_the_dataset_dir(self, tmp_path):
         """esd.list의 경로는 데이터셋 기준이다 (CWD 기준으로 열면 아무것도 측정되지 않는다)"""
-        import analyze_corpus
-
         esd = tmp_path / "esd.list"
         esd.write_text(
             "a.wav|spk|KO|안녕하세요\n"
@@ -898,8 +863,6 @@ class TestCorpusAnalyzer:
         assert ad["files_unmeasured"] == 1  # 읽지 못한 파일은 조용히 사라지지 않는다
 
     def test_no_audio_section_when_measurement_is_skipped(self, tmp_path):
-        import analyze_corpus
-
         esd = tmp_path / "esd.list"
         esd.write_text("a.wav|spk|KO|안녕하세요\n", encoding="utf-8")
         assert analyze_corpus.analyze(esd, check_audio=False)["audio_duration_sec"] == {}
@@ -907,18 +870,14 @@ class TestCorpusAnalyzer:
 
 class TestBertFeatureAlignment:
     def test_char_to_token_map(self):
-        import style_bert_vits2.nlp.korean.bert_feature as bf
-
-        build = getattr(bf, "__build_char_to_token_map")
+        build = _bert_feature_private("__build_char_to_token_map")
         # トークン 1 が文字 0-1、トークン 2 が文字 3-4 をカバーし、文字 2 (スペース) は未カバー
         offsets = [(0, 0), (0, 2), (3, 5), (0, 0)]
         mapping = build(offsets, 5)
         assert mapping == [1, 1, 1, 2, 2]  # スペースは直前のトークンに割り当て
 
     def test_char_to_token_map_leading_gap(self):
-        import style_bert_vits2.nlp.korean.bert_feature as bf
-
-        build = getattr(bf, "__build_char_to_token_map")
+        build = _bert_feature_private("__build_char_to_token_map")
         offsets = [(0, 0), (1, 3), (0, 0)]
         mapping = build(offsets, 3)
         # 先頭の未カバー文字は直後のトークンで埋められる
@@ -927,17 +886,12 @@ class TestBertFeatureAlignment:
     def test_kcbert_tokenizer_alignment(self):
         """実際の KcBERT トークナイザーで文字→トークン対応が構築できる"""
         transformers = pytest.importorskip("transformers")
-        from pathlib import Path
-
         tokenizer_path = Path(__file__).parent.parent / "bert" / "kcbert-large"
         if not (tokenizer_path / "vocab.txt").exists():
             pytest.skip("kcbert-large tokenizer files not found")
         tokenizer = transformers.AutoTokenizer.from_pretrained(str(tokenizer_path))
 
-        import style_bert_vits2.nlp.korean.bert_feature as bf
-
-        build = getattr(bf, "__build_char_to_token_map")
-
+        build = _bert_feature_private("__build_char_to_token_map")
         text = normalize_text("삼일 전, 배가 고팠다.")
         inputs = tokenizer(text, return_offsets_mapping=True)
         num_tokens = len(inputs["input_ids"])
@@ -949,55 +903,36 @@ class TestBertFeatureAlignment:
 class TestWordBoundaryRules:
     """어절 경계 음운 규칙의 적용/미적용 경계 조건 (내장 엔진 경로)"""
 
-    def _pron(self, text: str) -> str:
-        from style_bert_vits2.nlp.korean.morph import apply_morph_rules
-        from style_bert_vits2.nlp.korean.pronounce import pronounce
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("오늘 아침", "오느 라침"),  # 받침이 공백을 넘어 연음된다
+            ("사랑 안에서", "사랑 아네서"),  # ㅇ 받침 (/ŋ/) 은 연음하지 않음
+            # 구두점 = 휴지: 경계 규칙 미적용
+            ("옷, 입다", "옫, 입따"),
+            ("밥. 먹는다", "밥. 멍는다"),
+            ("밥  먹는다", "밥  멍는다"),  # 공백 2개 이상도 휴지로 간주
+            ("결국 승리", "결국 씅니"),  # 장애음 받침 뒤 경음화
+            # 유성음 받침 뒤 평음은 경계에서 경음화하지 않음 (관형형 ㄹ은 morph 담당)
+            ("사람 사이", "사람 사이"),
+            # 다음절 실질형태소에는 ㄴ 첨가 없이 연음만 ([저는냐구]가 아님, 과잉 적용 방지)
+            ("저는 야구", "저느 냐구"),
+            ("삼 일", "사 밀"),  # 한자어 수사 (NR) 는 첨가 제외 (삼일→[사밀] 과 일관)
+            ("그 일", "그 일"),  # 앞 어절이 모음으로 끝나면 첨가 없음
+        ],
+    )
+    def test_boundary_rules(self, text: str, expected: str):
+        assert pronounce(apply_morph_rules(text)) == expected
 
-        return pronounce(apply_morph_rules(text))
-
-    def test_liaison_moves_coda_across_space(self):
-        assert self._pron("오늘 아침") == "오느 라침"
-
-    def test_ieung_coda_does_not_liaise(self):
-        # ㅇ 받침 (/ŋ/) 은 연음하지 않음
-        assert self._pron("사랑 안에서") == "사랑 아네서"
-
-    def test_no_rules_across_punctuation(self):
-        # 구두점 = 휴지: 경계 규칙 미적용
-        assert self._pron("옷, 입다") == "옫, 입따"
-        assert self._pron("밥. 먹는다") == "밥. 멍는다"
-
-    def test_no_rules_across_double_space(self):
-        # 공백 2개 이상은 휴지로 간주
-        assert self._pron("밥  먹는다") == "밥  멍는다"
-
-    def test_tensification_after_obstruent(self):
-        assert self._pron("결국 승리") == "결국 씅니"
-
-    def test_no_tensification_after_sonorant_coda(self):
-        # 유성음 받침 뒤 평음은 경계에서 경음화하지 않음 (관형형 ㄹ은 morph 담당)
-        assert self._pron("사람 사이") == "사람 사이"
-
-    def test_word2ph_contract_preserved(self):
-        # 연음이 일어나도 g2p 계약 (word2ph 길이/합) 은 유지된다
-        from style_bert_vits2.nlp.korean.g2p import g2p
-
-        for text in ["오늘 아침", "몇 월", "밥 먹는다", "할 일"]:
-            phones, tones, word2ph = g2p(text)
-            assert len(word2ph) == len(text) + 2
-            assert sum(word2ph) == len(phones)
-
-    def test_n_insertion_not_applied_to_multisyllable_word(self):
-        # 다음절 실질형태소에는 첨가하지 않고 연음만 (과잉 적용 방지)
-        assert self._pron("저는 야구") == "저느 냐구"  # [저는냐구]가 아님
-
-    def test_n_insertion_not_applied_to_numeral(self):
-        # 한자어 수사 (NR) 는 첨가 제외 유지 (삼일→[사밀] 과 일관)
-        assert self._pron("삼 일") == "사 밀"
-
-    def test_n_insertion_requires_left_coda(self):
-        # 앞 어절이 모음으로 끝나면 첨가 없음
-        assert self._pron("그 일") == "그 일"
+    @pytest.mark.parametrize(
+        "text",
+        ["오늘 아침", "몇 월", "밥 먹는다", "할 일", "도착하면 알려 줘", "발생하지 않도록 조심해라"],
+    )
+    def test_word2ph_contract_preserved(self, text: str):
+        # 연음이 일어나거나 절 경계에서 멈춰도 g2p 계약 (word2ph 길이/합) 은 유지된다
+        phones, _, word2ph = g2p(text)
+        assert len(word2ph) == len(text) + 2
+        assert sum(word2ph) == len(phones)
 
 
 class TestClauseBoundary:
@@ -1007,178 +942,127 @@ class TestClauseBoundary:
     형태소 정보가 필요하므로 pronounce 단독이 아닌 g2p 경로로 확인한다.
     """
 
-    def _pron(self, text: str) -> str:
-        from style_bert_vits2.nlp.korean.g2p import to_pronunciation
-
-        return to_pronunciation(text)
-
-    def test_no_liaison_across_connective_ending(self):
-        assert self._pron("이곳에 들어오시면 안 됩니다") == "이고세 드러오시면 안 됨니다"
-        assert self._pron("도착하면 알려 줘") == "도차카면 알려 줘"
-        assert self._pron("길을 건너면 은행이 있어요") == "기를 건너면 은행이 이써요"
-
-    def test_no_tensification_across_connective_ending(self):
-        # 경음화도 절 경계를 넘지 않는다 (조심 → [쪼심] 방지)
-        assert self._pron("발생하지 않도록 조심해라") == "발생하지 안토록 조심해라"
-
-    def test_no_n_insertion_across_connective_ending(self):
-        # ㄴ 첨가도 절 경계를 넘지 않는다 (여덟 → [녀덜] 방지)
-        assert self._pron("깎아 주시면 여덟 개") == "까까 주시면 여덜 개"
-
-    def test_rules_still_apply_after_adnominal_ending(self):
-        # 관형사형 어미는 뒤 명사와 한 마디이므로 제29항 붙임2가 그대로 적용된다
-        assert self._pron("먹은 엿") == "머근 녇"
-        assert self._pron("할 일") == "할 릴"
-        assert self._pron("먹을 엿") == "머글 렫"
-
-    def test_rules_still_apply_without_ending(self):
-        # 체언·조사로 끝나는 어절 뒤는 절 경계가 아니므로 기존 동작 유지
-        assert self._pron("오늘 아침") == "오느 라침"
-        assert self._pron("삼 일") == "사 밀"
-        assert self._pron("옷 입다") == "온 닙따"
-
-    def test_word2ph_contract_preserved_at_clause_boundary(self):
-        from style_bert_vits2.nlp.korean.g2p import g2p
-
-        for text in ["도착하면 알려 줘", "발생하지 않도록 조심해라"]:
-            phones, _, word2ph = g2p(text)
-            assert len(word2ph) == len(text) + 2
-            assert sum(word2ph) == len(phones)
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            # 연결어미 뒤에서는 연음하지 않는다
+            ("이곳에 들어오시면 안 됩니다", "이고세 드러오시면 안 됨니다"),
+            ("도착하면 알려 줘", "도차카면 알려 줘"),
+            ("길을 건너면 은행이 있어요", "기를 건너면 은행이 이써요"),
+            # 경음화도 절 경계를 넘지 않는다 (조심 → [쪼심] 방지)
+            ("발생하지 않도록 조심해라", "발생하지 안토록 조심해라"),
+            # ㄴ 첨가도 절 경계를 넘지 않는다 (여덟 → [녀덜] 방지)
+            ("깎아 주시면 여덟 개", "까까 주시면 여덜 개"),
+            # 관형사형 어미는 뒤 명사와 한 마디이므로 제29항 붙임2가 그대로 적용된다
+            ("먹은 엿", "머근 녇"),
+            ("할 일", "할 릴"),
+            ("먹을 엿", "머글 렫"),
+            # 체언·조사로 끝나는 어절 뒤는 절 경계가 아니므로 기존 동작 유지
+            ("오늘 아침", "오느 라침"),
+            ("삼 일", "사 밀"),
+            ("옷 입다", "온 닙따"),
+        ],
+    )
+    def test_pronunciation(self, text: str, expected: str):
+        assert to_pronunciation(text) == expected
 
 
 # ============================================================
-# warm_start (KO 임베딩 초기화 매핑)
+# warm_start_ko (KO 임베딩 초기화 매핑). torch가 필요해 각 테스트 안에서 임포트한다
 # ============================================================
 
 
 class TestWarmStartMap:
-    def test_전_KO_심볼_커버(self):
-        from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
-        from style_bert_vits2.nlp.symbols import KO_SYMBOLS
+    def test_covers_all_46_ko_symbols(self):
+        # 가중치 합 = 1, 소스 = 베이스 구간 JP 심볼 조건은 warm_start_ko 임포트 시점에 검증된다
+        from warm_start_ko import KO_JP_INIT_MAP
 
         assert set(KO_JP_INIT_MAP.keys()) == set(KO_SYMBOLS)
         assert len(KO_JP_INIT_MAP) == 46
 
-    def test_가중치_합은_1(self):
-        from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
-
-        for ko, sources in KO_JP_INIT_MAP.items():
-            assert abs(sum(w for _, w in sources) - 1.0) < 1e-6, ko
-
-    def test_소스는_전부_베이스_구간_JP_심볼(self):
-        from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP, NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
-
-        for ko, sources in KO_JP_INIT_MAP.items():
-            for jp, _ in sources:
-                assert jp in SYMBOL_TO_IDX, f"{ko}: {jp}"
-                assert SYMBOL_TO_IDX[jp] < NUM_BASE_SYMBOLS, f"{ko}: {jp}"
-
     def test_symbol_to_idx_캐시(self):
-        from style_bert_vits2.nlp.korean.warm_start import NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
-        from style_bert_vits2.nlp.symbols import SYMBOLS
+        from warm_start_ko import NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
 
         assert SYMBOL_TO_IDX == {s: i for i, s in enumerate(SYMBOLS)}
         assert NUM_BASE_SYMBOLS == 112
 
     def test_확정_매핑_스팟체크(self):
         # 스펙 확정 테이블의 대표값 회귀망
-        from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
+        from warm_start_ko import KO_JP_INIT_MAP
 
-        assert KO_JP_INIT_MAP["ᄅ"] == [("r", 1.0)]
-        assert KO_JP_INIT_MAP["ᅥ"] == [("o", 1.0)]
-        assert KO_JP_INIT_MAP["ᅳ"] == [("u", 1.0)]
-        assert KO_JP_INIT_MAP["ᄀ"] == [("g", 1.0)]
-        assert KO_JP_INIT_MAP["ᄁ"] == [("k", 0.95), ("g", 0.05)]
-        assert KO_JP_INIT_MAP["ᄉ"] == [("s", 0.75), ("sh", 0.25)]
-        assert KO_JP_INIT_MAP["ᄊ"] == [("s", 0.85), ("sh", 0.15)]
-        assert KO_JP_INIT_MAP["ᅣ"] == [("y", 0.35), ("a", 0.65)]
-        assert KO_JP_INIT_MAP["ᅩ"] == [("o", 0.85), ("u", 0.15)]
-        assert KO_JP_INIT_MAP["ᅯ"] == [("w", 0.2), ("o", 0.8)]
-        assert KO_JP_INIT_MAP["ᆫ"] == [("N", 0.85), ("n", 0.15)]
-        assert KO_JP_INIT_MAP["ᆷ"] == [("N", 0.7), ("m", 0.3)]
-        assert KO_JP_INIT_MAP["ᆼ"] == [("N", 1.0)]
-        assert KO_JP_INIT_MAP["ᆨ"] == [("q", 0.9), ("k", 0.1)]
+        expected = {
+            "ᄅ": [("r", 1.0)],
+            "ᅥ": [("o", 1.0)],
+            "ᅳ": [("u", 1.0)],
+            "ᄀ": [("g", 1.0)],
+            "ᄁ": [("k", 0.95), ("g", 0.05)],
+            "ᄉ": [("s", 0.75), ("sh", 0.25)],
+            "ᄊ": [("s", 0.85), ("sh", 0.15)],
+            "ᅣ": [("y", 0.35), ("a", 0.65)],
+            "ᅩ": [("o", 0.85), ("u", 0.15)],
+            "ᅯ": [("w", 0.2), ("o", 0.8)],
+            "ᆫ": [("N", 0.85), ("n", 0.15)],
+            "ᆷ": [("N", 0.7), ("m", 0.3)],
+            "ᆼ": [("N", 1.0)],
+            "ᆨ": [("q", 0.9), ("k", 0.1)],
+        }
+        assert {ko: KO_JP_INIT_MAP[ko] for ko in expected} == expected
 
 
 class TestBuildEmbedding:
-    def _base(self):
+    @pytest.fixture(autouse=True)
+    def _setup(self):
         import torch
+
+        from warm_start_ko import build_embedding
 
         torch.manual_seed(0)
-        return torch.randn(5, 4, dtype=torch.float32)
+        self.torch, self.build = torch, build_embedding
+        self.base = torch.randn(5, 4, dtype=torch.float32)
 
     def test_기존_행_보존(self):
-        import torch
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
-
-        base = self._base()
-        out = build_embedding(base, 7, {5: [(0, 1.0)], 6: [(1, 0.5), (2, 0.5)]})
+        out = self.build(self.base, 7, {5: [(0, 1.0)], 6: [(1, 0.5), (2, 0.5)]})
         assert out.shape == (7, 4)
-        assert torch.equal(out[:5], base)
+        assert self.torch.equal(out[:5], self.base)
 
     def test_단일_매핑은_소스와_정확히_일치(self):
         # w=1.0이면 소스 행과 비트 단위로 동일해야 함
-        import torch
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
-
-        base = self._base()
-        out = build_embedding(base, 6, {5: [(2, 1.0)]})
-        assert torch.equal(out[5], base[2])
+        out = self.build(self.base, 6, {5: [(2, 1.0)]})
+        assert self.torch.equal(out[5], self.base[2])
 
     def test_가중_결합_수치(self):
-        import torch
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
+        out = self.build(self.base, 6, {5: [(1, 0.3), (3, 0.7)]})
+        assert self.torch.allclose(out[5], 0.3 * self.base[1] + 0.7 * self.base[3])
 
-        base = self._base()
-        out = build_embedding(base, 6, {5: [(1, 0.3), (3, 0.7)]})
-        assert torch.allclose(out[5], 0.3 * base[1] + 0.7 * base[3])
-
-    def test_신규_행_범위_밖_인덱스는_에러(self):
-        import pytest
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
-
-        base = self._base()
+    @pytest.mark.parametrize(
+        "target_rows, init_map",
+        [
+            (6, {4: [(0, 1.0)]}),  # 4는 기존 행
+            (6, {6: [(0, 1.0)]}),  # 6은 target_rows 밖
+            (7, {5: [(0, 1.0)]}),  # 신규 행 6 누락
+            # 소스는 기존 행(0~4)이어야 한다 (IndexError로 죽지 않고 명시적 ValueError)
+            (6, {5: [(5, 1.0)]}),
+            (6, {5: [(-1, 1.0)]}),
+            (3, {}),  # target_rows가 기존 행수보다 작음
+        ],
+    )
+    def test_잘못된_매핑은_에러(self, target_rows, init_map):
         with pytest.raises(ValueError):
-            build_embedding(base, 6, {4: [(0, 1.0)]})  # 4는 기존 행
-        with pytest.raises(ValueError):
-            build_embedding(base, 6, {6: [(0, 1.0)]})  # 6은 target_rows 밖
-
-    def test_채워지지_않은_신규_행은_에러(self):
-        import pytest
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
-
-        base = self._base()
-        with pytest.raises(ValueError):
-            build_embedding(base, 7, {5: [(0, 1.0)]})  # 행 6 누락
-
-    def test_소스_행_범위_검증(self):
-        # IndexError로 죽지 않고 명시적 ValueError를 내야 함
-        import pytest
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
-
-        base = self._base()
-        with pytest.raises(ValueError):
-            build_embedding(base, 6, {5: [(5, 1.0)]})  # 소스 5는 기존 행(0~4) 아님
-        with pytest.raises(ValueError):
-            build_embedding(base, 6, {5: [(-1, 1.0)]})
-
-    def test_target_rows가_기존보다_작으면_에러(self):
-        import pytest
-        from style_bert_vits2.nlp.korean.warm_start import build_embedding
-
-        base = self._base()
-        with pytest.raises(ValueError):
-            build_embedding(base, 3, {})
+            self.build(self.base, target_rows, init_map)
 
     def test_KO_PHONEME_INIT_MAP_상수는_실제_심볼_인덱스(self):
-        from style_bert_vits2.nlp.korean.warm_start import KO_PHONEME_INIT_MAP, NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
+        from warm_start_ko import KO_PHONEME_INIT_MAP, NUM_BASE_SYMBOLS, SYMBOL_TO_IDX
 
         assert set(KO_PHONEME_INIT_MAP.keys()) == set(range(NUM_BASE_SYMBOLS, len(SYMBOL_TO_IDX)))
         assert KO_PHONEME_INIT_MAP[SYMBOL_TO_IDX["ᄅ"]] == [(SYMBOL_TO_IDX["r"], 1.0)]
 
 
 class TestWarmStartConvert:
-    def _fake_g0(self, tmp_path, num_symbols=112, num_tones=12, num_langs=3):
+    @pytest.fixture(autouse=True)
+    def _tmp(self, tmp_path):
+        self.tmp_path = tmp_path
+
+    def _fake_g0(self, num_symbols=112, num_tones=12, num_langs=3):
         # 실제 G_0의 임베딩 3키 + 무관 텐서 1개를 가진 최소 safetensors를 만든다
         import torch
         from safetensors.torch import save_file
@@ -1189,18 +1073,17 @@ class TestWarmStartConvert:
             "enc_p.language_emb.weight": torch.randn(num_langs, 8),
             "dec.conv_pre.weight": torch.randn(4, 4),
         }
-        path = tmp_path / "G_0.safetensors"
+        path = self.tmp_path / "G_0.safetensors"
         save_file(tensors, str(path), metadata={"iteration": "0"})
         return path, tensors
 
     def test_변환_결과_행수와_초기화(self):
         import torch
         from safetensors import safe_open
-        from style_bert_vits2.nlp.korean.warm_start import SYMBOL_TO_IDX
-        from style_bert_vits2.nlp.symbols import LANGUAGE_TONE_START_MAP, NUM_TONES, SYMBOLS  # fmt: skip
-        from warm_start_ko import convert
 
-        in_path, tensors = self._fake_g0(self.tmp_path)
+        from warm_start_ko import SYMBOL_TO_IDX, convert
+
+        in_path, tensors = self._fake_g0()
         out_path = self.tmp_path / "G_0_ko.safetensors"
         convert(in_path, out_path)
 
@@ -1225,24 +1108,19 @@ class TestWarmStartConvert:
         assert torch.equal(dec, tensors["dec.conv_pre.weight"])
 
     def test_이미_확장된_파일은_에러(self):
-        import pytest
         from warm_start_ko import convert
 
-        in_path, _ = self._fake_g0(self.tmp_path, num_symbols=158, num_tones=13, num_langs=4)  # fmt: skip
+        in_path, _ = self._fake_g0(num_symbols=158, num_tones=13, num_langs=4)
         with pytest.raises(ValueError, match="이미"):
             convert(in_path, self.tmp_path / "out.safetensors")
 
     def test_생성자_체크포인트가_아니면_에러(self):
-        import pytest
         import torch
         from safetensors.torch import save_file
+
         from warm_start_ko import convert
 
         path = self.tmp_path / "D_0.safetensors"
         save_file({"disc.conv.weight": torch.randn(4, 4)}, str(path))
         with pytest.raises(ValueError, match="G_0"):
             convert(path, self.tmp_path / "out.safetensors")
-
-    @pytest.fixture(autouse=True)
-    def _tmp(self, tmp_path):
-        self.tmp_path = tmp_path

@@ -23,6 +23,10 @@
 - 한자어 ㄹ 관련의 예외적 경음화
 """
 
+from collections.abc import Iterator
+from itertools import groupby
+
+
 # 초성 (choseong) 19개: 유니코드 조합 순서
 CHOSEONG = [
     "ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ",
@@ -80,6 +84,14 @@ NASALIZATION_MAP = {"ㄱ": "ㅇ", "ㄷ": "ㄴ", "ㅂ": "ㅁ"}
 __CHOSEONG_INDEX = {c: i for i, c in enumerate(CHOSEONG)}
 __JUNGSEONG_INDEX = {c: i for i, c in enumerate(JUNGSEONG)}
 __JONGSEONG_INDEX = {c: i for i, c in enumerate(JONGSEONG)}
+__DOUBLE_CODA_JOIN = {parts: double for double, parts in DOUBLE_CODA_SPLIT.items()}
+
+# 받침 ㄷ/ㅌ + 이·여 초성 (ㅇ/ㅎ) → 구개음화된 초성
+__PALATALIZATION = {("ㄷ", "ㅇ"): "ㅈ", ("ㅌ", "ㅇ"): "ㅊ", ("ㄷ", "ㅎ"): "ㅊ"}
+# 받침 ㅎ + 초성 → 결합 결과 (좋다→조타, 닿소→다쏘)
+__H_CODA_FUSION = {**ASPIRATION_MAP, "ㅅ": "ㅆ"}
+# 받침 + 초성 ㅎ → 격음 (국화→구콰). ㄷ으로 중화되는 받침은 [ㅌ] (제12항 붙임2: 못하다→모타다)
+__H_ONSET_FUSION = {**ASPIRATION_MAP, **dict.fromkeys(["ㅅ", "ㅆ", "ㅊ", "ㅌ"], "ㅌ")}
 
 HANGUL_BASE = 0xAC00
 
@@ -95,34 +107,18 @@ def decompose(char: str) -> tuple[str, str, list[str]]:
     종성은 겹받침이면 2개 요소, 없으면 빈 리스트.
     """
     code = ord(char) - HANGUL_BASE
-    cho = CHOSEONG[code // 588]
-    jung = JUNGSEONG[(code % 588) // 28]
     jong = JONGSEONG[code % 28]
-    if jong == "":
-        coda: list[str] = []
-    elif jong in DOUBLE_CODA_SPLIT:
-        coda = list(DOUBLE_CODA_SPLIT[jong])
-    else:
-        coda = [jong]
-    return cho, jung, coda
+    coda = list(DOUBLE_CODA_SPLIT.get(jong, [jong] if jong else []))
+    return CHOSEONG[code // 588], JUNGSEONG[(code % 588) // 28], coda
 
 
 def compose(cho: str, jung: str, coda: list[str]) -> str:
     """(초성, 중성, 종성 리스트)에서 한글 음절을 조합한다"""
-    if len(coda) == 0:
-        jong = ""
-    elif len(coda) == 1:
-        jong = coda[0]
-    else:
-        # 겹받침 조합 (규칙 적용 후에는 보통 여기 오지 않음)
-        for double, parts in DOUBLE_CODA_SPLIT.items():
-            if parts == tuple(coda):
-                jong = double
-                break
-        else:
-            # decompose() 에서 나온 종성이라면 반드시 위에서 조합 가능해야 한다.
-            # 조용히 자모를 버리면 원인 추적이 어려워지므로 명시적으로 실패시킨다
-            raise ValueError(f"Cannot compose invalid double coda: {coda}")
+    # 겹받침은 규칙 적용 후에는 보통 오지 않지만, decompose()에서 나온 것이라면 반드시 조합 가능해야 한다.
+    # 조용히 자모를 버리면 원인 추적이 어려워지므로 명시적으로 실패시킨다
+    jong = "".join(coda) if len(coda) < 2 else __DOUBLE_CODA_JOIN.get(tuple(coda))
+    if jong is None:
+        raise ValueError(f"Cannot compose invalid double coda: {coda}")
     code = (
         HANGUL_BASE
         + __CHOSEONG_INDEX[cho] * 588
@@ -130,6 +126,16 @@ def compose(cho: str, jung: str, coda: list[str]) -> str:
         + __JONGSEONG_INDEX[jong]
     )
     return chr(code)
+
+
+def __coda_pairs(syls: list[list]) -> Iterator[tuple[list, list]]:
+    """
+    받침이 있는 음절과 그 다음 음절의 쌍을 앞에서부터 차례로 낸다.
+    받침 유무는 쌍을 낼 때마다 확인하므로, 앞 쌍에서 바꾼 결과가 뒤 쌍의 판정에 반영된다.
+    """
+    for cur, nxt in zip(syls, syls[1:]):
+        if cur[2]:
+            yield cur, nxt
 
 
 def __apply_jyeo_rule(syls: list[list]) -> None:
@@ -151,11 +157,7 @@ def __apply_ui_rules(syls: list[list]) -> None:
       어말의 의는 속격 조사([에])일 가능성이 있어 형태소 계층에 맡기고 그대로 둔다
     """
     for i, syl in enumerate(syls):
-        if syl[1] != "ㅢ":
-            continue
-        if syl[0] != "ㅇ":
-            syl[1] = "ㅣ"
-        elif 0 < i < len(syls) - 1:
+        if syl[1] == "ㅢ" and (syl[0] != "ㅇ" or 0 < i < len(syls) - 1):
             syl[1] = "ㅣ"
 
 
@@ -166,95 +168,59 @@ def __apply_palatalization(syls: list[list]) -> None:
     표기상 ㄷ/ㅌ 받침 + 여/혀는 '이' 계열 접미사의 축약에서만 생기므로 무조건 적용해도 된다.
     생성된 쳐는 뒤따르는 __apply_jyeo_rule이 [처]로 단모음화한다.
     """
-    for i in range(len(syls) - 1):
-        cur, nxt = syls[i], syls[i + 1]
-        if not cur[2] or nxt[1] not in ("ㅣ", "ㅕ"):
-            continue
+    for cur, nxt in __coda_pairs(syls):
         # ㅕ는 '이' 계열 축약 음절인 여/였/혀/혔 (받침 없음 또는 ㅆ)에 한정한다.
         # 받침을 가진 형/열/염 등은 축약이 아닌 실질 음절 (맏형[마텽]은 격음화가 맞음)
-        if nxt[1] == "ㅕ" and nxt[2] not in ([], ["ㅆ"]):
+        if nxt[1] != "ㅣ" and not (nxt[1] == "ㅕ" and nxt[2] in ([], ["ㅆ"])):
             continue
-        last = cur[2][-1]
-        if nxt[0] == "ㅇ":
-            if last == "ㄷ":
-                cur[2] = cur[2][:-1]
-                nxt[0] = "ㅈ"
-            elif last == "ㅌ":
-                cur[2] = cur[2][:-1]
-                nxt[0] = "ㅊ"
-        elif nxt[0] == "ㅎ" and last == "ㄷ":
+        onset = __PALATALIZATION.get((cur[2][-1], nxt[0]))
+        if onset:
             cur[2] = cur[2][:-1]
-            nxt[0] = "ㅊ"
+            nxt[0] = onset
 
 
 def __apply_h_rules(syls: list[list]) -> None:
     """ㅎ 탈락·격음화"""
-    for i in range(len(syls) - 1):
-        cur, nxt = syls[i], syls[i + 1]
-        if not cur[2]:
-            continue
+    for cur, nxt in __coda_pairs(syls):
         last = cur[2][-1]
         # 받침 쪽의 ㅎ (ㅎ, ㄶ, ㅀ)
         if last == "ㅎ":
-            if nxt[0] in ASPIRATION_MAP:
-                # 좋다→조타, 많고→만코
+            if nxt[0] in __H_CODA_FUSION:
+                # 좋다→조타, 많고→만코, 닿소→다쏘
                 cur[2] = cur[2][:-1]
-                nxt[0] = ASPIRATION_MAP[nxt[0]]
-            elif nxt[0] == "ㅅ":
-                # 닿소→다쏘
-                cur[2] = cur[2][:-1]
-                nxt[0] = "ㅆ"
+                nxt[0] = __H_CODA_FUSION[nxt[0]]
             elif nxt[0] == "ㅇ":
                 # 좋아→조아, 많이→마니 (남은 ㄴ/ㄹ은 이후 연음에서 이동)
                 cur[2] = cur[2][:-1]
             elif nxt[0] == "ㄴ":
-                # 놓는→논는 (ㅎ→ㄷ→비음화로 ㄴ이 되지만 바로 ㄴ으로 처리)
-                if len(cur[2]) == 1:
-                    cur[2] = ["ㄴ"]
-                else:
-                    cur[2] = cur[2][:-1]
-        # 초성 쪽의 ㅎ: 받침의 장애음과 결합해 격음화 (국화→구콰, 앉히다→안치다)
-        elif nxt[0] == "ㅎ":
-            if last in ASPIRATION_MAP:
-                cur[2] = cur[2][:-1]
-                nxt[0] = ASPIRATION_MAP[last]
-            elif last in ("ㅅ", "ㅆ", "ㅊ", "ㅌ"):
-                # 제12항 붙임2: ㄷ으로 중화되는 받침 + ㅎ → [ㅌ] (못하다→모타다, 깨끗하다→깨끄타다)
-                cur[2] = cur[2][:-1]
-                nxt[0] = "ㅌ"
+                # 놓는→논는 (ㅎ→ㄷ→비음화로 ㄴ이 되지만 바로 ㄴ으로 처리). 겹받침 (않네)은 남은 ㄴ/ㄹ을 쓴다
+                cur[2] = cur[2][:-1] or ["ㄴ"]
+        # 초성 쪽의 ㅎ: 받침의 장애음과 결합해 격음화 (국화→구콰, 앉히다→안치다, 못하다→모타다)
+        elif nxt[0] == "ㅎ" and last in __H_ONSET_FUSION:
+            cur[2] = cur[2][:-1]
+            nxt[0] = __H_ONSET_FUSION[last]
 
 
 def __apply_liaison(syls: list[list]) -> None:
     """연음: 받침 + 모음으로 시작하는 음절 → 받침이 다음 초성으로 이동"""
-    for i in range(len(syls) - 1):
-        cur, nxt = syls[i], syls[i + 1]
-        if not cur[2] or nxt[0] != "ㅇ":
-            continue
+    for cur, nxt in __coda_pairs(syls):
         last = cur[2][-1]
         # ㅇ 받침은 이동하지 않음 (강이→강이)
-        if last == "ㅇ":
+        if nxt[0] != "ㅇ" or last == "ㅇ":
             continue
         cur[2] = cur[2][:-1]
         # 겹받침에서 옮겨 간 ㅅ은 경음화한다 (값이→갑씨, 넋이→넉씨)
-        if last == "ㅅ" and len(cur[2]) > 0:
-            nxt[0] = "ㅆ"
-        else:
-            nxt[0] = last
+        nxt[0] = "ㅆ" if last == "ㅅ" and cur[2] else last
 
 
 def __apply_coda_simplification(syls: list[list]) -> None:
     """자음군 단순화 + 음절의 끝소리 규칙 (종성 중화)"""
     for syl in syls:
-        if not syl[2]:
-            continue
         if len(syl[2]) == 2:
-            first, second = syl[2]
             # 대표음 선택: ㄺ→ㄱ, ㄻ→ㅁ, ㄿ→ㅂ은 뒤 자음, 그 외에는 앞 자음
-            if first + second in ("ㄹㄱ", "ㄹㅁ", "ㄹㅍ"):
-                syl[2] = [second]
-            else:
-                syl[2] = [first]
-        syl[2] = [CODA_NEUTRALIZATION[syl[2][0]]]
+            syl[2] = syl[2][1:] if "".join(syl[2]) in ("ㄹㄱ", "ㄹㅁ", "ㄹㅍ") else syl[2][:1]
+        if syl[2]:
+            syl[2] = [CODA_NEUTRALIZATION[syl[2][0]]]
 
 
 def __apply_tensification(syls: list[list]) -> None:
@@ -262,28 +228,20 @@ def __apply_tensification(syls: list[list]) -> None:
     경음화: 장애음 받침 + 평음 → 경음 (국밥→국빱, 앉다→안따)
     자음군 단순화로 장애음 정보가 사라지기 전에, 중화 후의 값으로 판정해야 한다
     """
-    for i in range(len(syls) - 1):
-        cur, nxt = syls[i], syls[i + 1]
-        if not cur[2]:
-            continue
-        last = CODA_NEUTRALIZATION[cur[2][-1]]
-        if last in ("ㄱ", "ㄷ", "ㅂ") and nxt[0] in TENSIFICATION_MAP:
+    for cur, nxt in __coda_pairs(syls):
+        if CODA_NEUTRALIZATION[cur[2][-1]] in ("ㄱ", "ㄷ", "ㅂ") and nxt[0] in TENSIFICATION_MAP:  # fmt: skip
             nxt[0] = TENSIFICATION_MAP[nxt[0]]
 
 
 def __apply_nasalization(syls: list[list]) -> None:
     """비음화: 국물→궁물, 십리→심니, 종로→종노, 독립→동닙"""
-    for i in range(len(syls) - 1):
-        cur, nxt = syls[i], syls[i + 1]
-        if not cur[2]:
-            continue
+    for cur, nxt in __coda_pairs(syls):
         coda = cur[2][-1]
-        if coda in NASALIZATION_MAP and nxt[0] in ("ㄴ", "ㅁ"):
+        if coda in NASALIZATION_MAP and nxt[0] in ("ㄴ", "ㅁ", "ㄹ"):
+            # 장애음 + 비음 → 비음 (국물→궁물). 뒤가 ㄹ이면 ㄹ도 ㄴ으로 (십리→심니)
             cur[2] = cur[2][:-1] + [NASALIZATION_MAP[coda]]
-        elif coda in NASALIZATION_MAP and nxt[0] == "ㄹ":
-            # 장애음 + ㄹ → 비음 + ㄴ (십리→심니)
-            cur[2] = cur[2][:-1] + [NASALIZATION_MAP[coda]]
-            nxt[0] = "ㄴ"
+            if nxt[0] == "ㄹ":
+                nxt[0] = "ㄴ"
         elif coda in ("ㅁ", "ㅇ") and nxt[0] == "ㄹ":
             # 비음 + ㄹ → 비음 + ㄴ (종로→종노, 담력→담녁)
             nxt[0] = "ㄴ"
@@ -291,14 +249,10 @@ def __apply_nasalization(syls: list[list]) -> None:
 
 def __apply_lateralization(syls: list[list]) -> None:
     """유음화: ㄴ + ㄹ / ㄹ + ㄴ → ㄹㄹ (신라→실라, 칼날→칼랄)"""
-    for i in range(len(syls) - 1):
-        cur, nxt = syls[i], syls[i + 1]
-        if not cur[2]:
-            continue
-        coda = cur[2][-1]
-        if coda == "ㄴ" and nxt[0] == "ㄹ":
+    for cur, nxt in __coda_pairs(syls):
+        if cur[2][-1] == "ㄴ" and nxt[0] == "ㄹ":
             cur[2] = cur[2][:-1] + ["ㄹ"]
-        elif coda == "ㄹ" and nxt[0] == "ㄴ":
+        elif cur[2][-1] == "ㄹ" and nxt[0] == "ㄴ":
             nxt[0] = "ㄹ"
 
 
@@ -376,32 +330,24 @@ def pronounce(text: str, pause_positions: frozenset[int] = frozenset()) -> str:
     pause_positions는 휴지로 볼 공백의 문자 인덱스다. 절 경계처럼 형태소 정보가
     있어야 아는 휴지를 바깥에서 알려주기 위한 것으로, g2p.py의 발음 변환 경로가 넘긴다.
     """
-    # (is_hangul_word, segment) 리스트로 분할하고, 어절별로 내부 규칙을 적용
+    # (is_hangul_word, segment) 리스트로 분할하고, 어절별로 내부 규칙을 적용 (한글 이외는 한 글자씩)
     segments: list[list] = []
-    word_buffer: list[str] = []
-    for char in text:
-        if is_hangul_syllable(char):
-            word_buffer.append(char)
+    for is_hangul, chars in groupby(text, is_hangul_syllable):
+        if is_hangul:
+            segments.append([True, pronounce_word("".join(chars))])
         else:
-            if word_buffer:
-                segments.append([True, pronounce_word("".join(word_buffer))])
-                word_buffer = []
-            segments.append([False, char])
-    if word_buffer:
-        segments.append([True, pronounce_word("".join(word_buffer))])
+            segments.extend([False, char] for char in chars)
 
     # 어절 경계 규칙: 공백 정확히 하나로 인접한 어절 쌍에 왼쪽부터 순서대로 적용
     # 규칙은 음절 수를 보존하므로 누적 길이가 곧 그 공백의 문자 위치가 된다
     space_at = 0
     for i in range(len(segments) - 2):
         space_at += len(segments[i][1])
-        if space_at in pause_positions:
-            continue
-        if segments[i][0] and not segments[i + 1][0] and segments[i + 1][1] == " " and segments[i + 2][0]:  # fmt: skip
-            left_word, right_word = segments[i][1], segments[i + 2][1]
-            new_left, new_right = __apply_word_boundary(left_word[-1], right_word[0])
-            segments[i][1] = left_word[:-1] + new_left
-            segments[i + 2][1] = new_right + right_word[1:]
+        (left_is_word, left), (_, gap), (right_is_word, right) = segments[i : i + 3]
+        if left_is_word and gap == " " and right_is_word and space_at not in pause_positions:
+            new_left, new_right = __apply_word_boundary(left[-1], right[0])
+            segments[i][1] = left[:-1] + new_left
+            segments[i + 2][1] = new_right + right[1:]
 
     pronounced = "".join(seg for _, seg in segments)
     assert len(pronounced) == len(text)

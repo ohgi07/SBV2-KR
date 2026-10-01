@@ -19,6 +19,7 @@ pronounce.py의 음운 규칙 엔진은 형태소 경계 정보가 필요한 규
 kiwipiepy가 없으면 예외 사전만 적용된다.
 """
 
+import functools
 from typing import Any, Optional
 
 from style_bert_vits2.logging import logger
@@ -185,33 +186,25 @@ __ENDING_TAGS = {"EC", "EF", "ETM", "ETN", "EP"}
 # 명사형 (ETN) 어미는 뒤 체언과 한 마디라 제외 — 먹은 엿[머근녇], 할 일[할릴].
 __CLAUSE_ENDING_TAGS = {"EC", "EF"}
 
-# kiwipiepy (선택 의존성)
-__kiwi_instance = None
-__kiwi_unavailable = False
 
-
+@functools.cache
 def get_kiwi():
     """
     kiwipiepy가 설치되어 있으면 그 인스턴스 (싱글턴)를 반환한다.
-    미설치라면 None을 반환한다.
+    미설치라면 None을 반환한다 (결과를 캐시하므로 로드 시도는 한 번뿐).
     """
-    global __kiwi_instance, __kiwi_unavailable
-    if __kiwi_unavailable:
-        return None
-    if __kiwi_instance is None:
-        try:
-            from kiwipiepy import Kiwi
+    try:
+        from kiwipiepy import Kiwi
 
-            __kiwi_instance = Kiwi()
-            logger.info("Using kiwipiepy for morphology-aware Korean pronunciation")
-        except Exception as e:
-            __kiwi_unavailable = True
-            logger.info(
-                f"kiwipiepy is not available ({e}), "
-                "morphology-aware pronunciation rules are disabled"
-            )
-            return None
-    return __kiwi_instance
+        kiwi = Kiwi()
+    except Exception as e:
+        logger.info(
+            f"kiwipiepy is not available ({e}), "
+            "morphology-aware pronunciation rules are disabled"
+        )
+        return None
+    logger.info("Using kiwipiepy for morphology-aware Korean pronunciation")
+    return kiwi
 
 
 def tokenize(text: str) -> Optional[list[Any]]:
@@ -242,8 +235,7 @@ for __orig, __replaced in PRONUNCIATION_EXCEPTIONS.items():
 def apply_exceptions(text: str) -> str:
     """발음 예외 사전에 의한 재작성 (문자 수 보존)"""
     for orig, replaced in PRONUNCIATION_EXCEPTIONS.items():
-        if orig in text:
-            text = text.replace(orig, replaced)
+        text = text.replace(orig, replaced)
     return text
 
 
@@ -286,6 +278,22 @@ def __set_cho(char: str, new_cho: str) -> str:
     return compose(new_cho, jung, coda)
 
 
+def __tensify(chars: list[str], pos: int, onsets=TENSIFICATION_MAP) -> None:
+    """chars[pos]가 한글 음절이고 초성이 onsets에 든 평음이면 경음으로 바꾼다"""
+    if 0 <= pos < len(chars) and is_hangul_syllable(chars[pos]):
+        cho = decompose(chars[pos])[0]
+        if cho in onsets:
+            chars[pos] = __set_cho(chars[pos], TENSIFICATION_MAP[cho])
+
+
+def __insert_n(chars: list[str], pos: int, left: int) -> None:
+    """ㄴ 첨가: chars[pos]가 이/야/여/요/유로 시작하고 chars[left]에 받침이 있으면 초성을 ㄴ으로 바꾼다"""
+    if pos < len(chars) and is_hangul_syllable(chars[pos]) and is_hangul_syllable(chars[left]):  # fmt: skip
+        cho, jung, _ = decompose(chars[pos])
+        if cho == "ㅇ" and jung in __N_INSERTION_VOWELS and decompose(chars[left])[2]:
+            chars[pos] = __set_cho(chars[pos], "ㄴ")
+
+
 def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
     """
     형태소 정보에 기반한 발음 보정을 텍스트에 적용한다.
@@ -314,44 +322,23 @@ def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
 
         # 인접한 형태소 (같은 어절 안에서 직전 형태소와 틈 없이 이어짐)인 경우에만
         adjacent = prev_token is not None and prev_token.start + prev_token.len == start and start > 0  # fmt: skip
-
-        # 2. 형태소 경계의 ㄴ 첨가 (한+여름 → 한녀름)
-        if (
-            adjacent
-            and prev_token.tag in __N_INSERTION_LEFT_TAGS
-            and token.tag in __N_INSERTION_RIGHT_TAGS
-            and start < len(chars)
-            and is_hangul_syllable(chars[start])
-            and is_hangul_syllable(chars[start - 1])
-        ):
-            # 조건은 재작성된 chars로 본다. 예외 사전이 규칙을 끄는 통로다 (송벼련의 ㄹ이 첨가를 막음)
-            cho, jung, _ = decompose(chars[start])
-            _, _, prev_coda = decompose(chars[start - 1])
-            if cho == "ㅇ" and jung in __N_INSERTION_VOWELS and prev_coda:
-                chars[start] = __set_cho(chars[start], "ㄴ")
-
-        # 2b. 어절 경계의 ㄴ 첨가 (제29항 붙임2: 한 일→한 닐, 옷 입다→옷 닙다)
-        #     직전 형태소와 공백 1개를 사이에 두고, 앞 어절이 자음 받침으로 끝나며
-        #     1음절 실질형태소가 이/야/여/요/유로 시작하는 경우.
-        #     첨가 후의 유도 (비음화·유음화)는 pronounce.py의 경계 패스가 수행한다.
+        # 직전 형태소와 공백 1개를 사이에 둔 경우 (어절 경계)
         cross_word = (
             prev_token is not None
             and prev_token.start + prev_token.len + 1 == start
             and start >= 2
             and chars[start - 1] == " "
         )
-        if (
-            cross_word
-            and token.tag in __N_INSERTION_CROSS_WORD_RIGHT_TAGS
-            and token.len == 1
-            and start < len(chars)
-            and is_hangul_syllable(chars[start])
-            and is_hangul_syllable(chars[start - 2])
-        ):
-            cho, jung, _ = decompose(chars[start])
-            _, _, prev_coda = decompose(chars[start - 2])
-            if cho == "ㅇ" and jung in __N_INSERTION_VOWELS and prev_coda:
-                chars[start] = __set_cho(chars[start], "ㄴ")
+
+        # 2. 형태소 경계의 ㄴ 첨가 (한+여름 → 한녀름)
+        #    조건은 재작성된 chars로 본다. 예외 사전이 규칙을 끄는 통로다 (송벼련의 ㄹ이 첨가를 막음)
+        if adjacent and prev_token.tag in __N_INSERTION_LEFT_TAGS and token.tag in __N_INSERTION_RIGHT_TAGS:  # fmt: skip
+            __insert_n(chars, start, start - 1)
+        # 2b. 어절 경계의 ㄴ 첨가 (제29항 붙임2: 한 일→한 닐, 옷 입다→옷 닙다)
+        #     앞 어절이 자음 받침으로 끝나고 1음절 실질형태소가 이/야/여/요/유로 시작하는 경우.
+        #     첨가 후의 유도 (비음화·유음화)는 pronounce.py의 경계 패스가 수행한다.
+        elif cross_word and token.tag in __N_INSERTION_CROSS_WORD_RIGHT_TAGS and token.len == 1:  # fmt: skip
+            __insert_n(chars, start, start - 2)
 
         # 3. 용언 어간말 ㄴ/ㅁ 뒤 어미의 경음화 (신다 → 신따)
         if (
@@ -362,47 +349,35 @@ def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
             and is_hangul_syllable(chars[start])
             and is_hangul_syllable(chars[start - 1])
         ):
-            _, _, stem_coda = decompose(chars[start - 1])
-            cho, _, _ = decompose(chars[start])
+            stem_cho, stem_jung, stem_coda = decompose(chars[start - 1])
             # 어간 받침 ㄴ(ㄵ)/ㅁ(ㄻ) 뒤의 어미는 경음화 (표준발음법 제24항)
             # ㄵ은 pronounce.py의 장애음 규칙에서 처리되므로, 여기서는 ㄴ/ㅁ/ㄻ을 다룬다
             # (명사의 ㄻ (삶과 등)은 경음화하지 않으므로, 용언 어간에 한정하는 이곳이 맞는 위치)
-            if stem_coda in (["ㄴ"], ["ㅁ"], ["ㄹ", "ㅁ"]) and cho in ("ㄱ", "ㄷ", "ㅅ", "ㅈ"):  # fmt: skip
-                chars[start] = __set_cho(chars[start], TENSIFICATION_MAP[cho])
+            if stem_coda in (["ㄴ"], ["ㅁ"], ["ㄹ", "ㅁ"]):
+                __tensify(chars, start, ("ㄱ", "ㄷ", "ㅅ", "ㅈ"))
             # 용언 어간 말음 ㄺ은 ㄱ 어미 앞에서 [ㄹ] + 어미 경음화 (표준발음법 제11항 다만:
             # 맑고→[말꼬]). 명사 (닭과 등)는 [ㄱ]이므로 용언 어간에 한정하는 여기가 맞다.
-            if stem_coda == ["ㄹ", "ㄱ"] and cho == "ㄱ":
-                pcho, pjung, _ = decompose(chars[start - 1])
-                chars[start - 1] = compose(pcho, pjung, ["ㄹ"])
-                chars[start] = __set_cho(chars[start], "ㄲ")
+            elif stem_coda == ["ㄹ", "ㄱ"] and decompose(chars[start])[0] == "ㄱ":
+                chars[start - 1] = compose(stem_cho, stem_jung, ["ㄹ"])
+                __tensify(chars, start)
 
         # 4. 관형사형 어미 -(으)ㄹ 뒤의 경음화 (갈 데가 → 갈 떼가, 먹을 것 → 먹을 껏)
         ## form 문자열로 판정하면 축약형의 "ᆯ" (자모)은 잡히지만 "을/를" 같은
         ## 완성형 음절을 놓치므로, 토큰 마지막 음절의 종성으로 판정한다
-        etm_ends_with_rieul = False
         last_pos = start + token.len - 1
         if token.tag == "ETM" and 0 <= last_pos < len(chars) and is_hangul_syllable(chars[last_pos]):  # fmt: skip
-            _, _, etm_coda = decompose(chars[last_pos])
-            etm_ends_with_rieul = bool(etm_coda) and etm_coda[-1] == "ㄹ"
-        if etm_ends_with_rieul:
-            next_pos = start + token.len
-            # 공백 1개까지 건너뛰고 다음 문자를 찾는다
-            if next_pos < len(chars) and chars[next_pos] == " ":
-                next_pos += 1
-            if next_pos < len(chars) and is_hangul_syllable(chars[next_pos]):
-                cho, _, _ = decompose(chars[next_pos])
-                if cho in ("ㄱ", "ㄷ", "ㅂ", "ㅅ", "ㅈ"):
-                    chars[next_pos] = __set_cho(chars[next_pos], TENSIFICATION_MAP[cho])
+            if decompose(chars[last_pos])[2][-1:] == ["ㄹ"]:
+                # 공백 1개까지 건너뛰고 다음 문자를 경음화한다
+                next_pos = start + token.len
+                if next_pos < len(chars) and chars[next_pos] == " ":
+                    next_pos += 1
+                __tensify(chars, next_pos)
 
         # 5. -(으)ㄹ로 시작하는 축약 어미의 경음화 (표준발음법 제27항 붙임: 할수록→[할쑤록],
         #    할지→[할찌], 할게→[할께]). kiwi는 축약 어미를 ᆯ수록 같은 자모 ᆯ로 시작하는
         #    겹침 스팬으로 반환하므로, 어미 2음절째 (start+1)가 경음화 대상이 된다.
         if token.tag in __ENDING_TAGS and len(token.form) >= 2 and token.form[0] == "ᆯ" and token.len >= 2:  # fmt: skip
-            pos2 = start + 1
-            if pos2 < len(chars) and is_hangul_syllable(chars[pos2]):
-                cho, _, _ = decompose(chars[pos2])
-                if cho in ("ㄱ", "ㄷ", "ㅂ", "ㅅ", "ㅈ"):
-                    chars[pos2] = __set_cho(chars[pos2], TENSIFICATION_MAP[cho])
+            __tensify(chars, start + 1)
 
         prev_token = token
 

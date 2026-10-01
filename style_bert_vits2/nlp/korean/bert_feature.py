@@ -72,6 +72,28 @@ def __build_char_to_token_map(offsets: list[tuple[int, int]], num_chars: int) ->
     return char_to_token
 
 
+def __to_phone_level(
+    res: Any,
+    style_res_mean: Any,
+    offsets: list[tuple[int, int]],
+    text: str,
+    word2ph: list[int],
+    assist_text_weight: float,
+) -> Any:
+    """
+    토큰 단위 특징량 res를 문자 단위 ([CLS] + 각 문자 + [SEP])로 대응시킨 뒤, word2ph에 따라
+    음소 단위로 전개해 [hidden, 음소 수]로 반환한다. torch.Tensor·np.ndarray 모두 받는다.
+    style_res_mean이 있으면 assist_text_weight 비율로 섞는다.
+    """
+    assert len(word2ph) == len(text) + 2
+    char_to_token = [0] + __build_char_to_token_map(offsets, len(text)) + [len(res) - 1]
+    phone_to_token = [token for token, n in zip(char_to_token, word2ph) for _ in range(n)]
+    feature = res[phone_to_token]
+    if style_res_mean is not None:
+        feature = feature * (1 - assist_text_weight) + style_res_mean * assist_text_weight
+    return feature.T
+
+
 def extract_bert_feature(
     text: str,
     word2ph: list[int],
@@ -99,60 +121,27 @@ def extract_bert_feature(
         device = "cpu"
     model = bert_models.load_model(Languages.KO, device_map=device)
     bert_models.transfer_model(Languages.KO, device)
+    tokenizer = bert_models.load_tokenizer(Languages.KO)
+    max_length = __get_max_length(tokenizer)
 
-    style_res_mean = None
-    with torch.no_grad():
-        tokenizer = bert_models.load_tokenizer(Languages.KO)
-        max_length = __get_max_length(tokenizer)
+    def run(input_text: str) -> tuple[torch.Tensor, list[tuple[int, int]]]:
+        """뒤에서 3번째 은닉층의 토큰별 특징량과 토큰별 문자 오프셋을 반환한다"""
         inputs = tokenizer(
-            text,
+            input_text,
             return_tensors="pt",
             return_offsets_mapping=True,
             truncation=True,
             max_length=max_length,
         )
         offsets = inputs.pop("offset_mapping")[0].tolist()
-        for i in inputs:
-            inputs[i] = inputs[i].to(device)  # type: ignore
-        res = model(**inputs, output_hidden_states=True)
-        res = torch.cat(res["hidden_states"][-3:-2], -1)[0].cpu()
-        if assist_text:
-            style_inputs = tokenizer(
-                assist_text,
-                return_tensors="pt",
-                truncation=True,
-                max_length=max_length,
-            )
-            for i in style_inputs:
-                style_inputs[i] = style_inputs[i].to(device)  # type: ignore
-            style_res = model(**style_inputs, output_hidden_states=True)
-            style_res = torch.cat(style_res["hidden_states"][-3:-2], -1)[0].cpu()
-            style_res_mean = style_res.mean(0)
+        res = model(**{k: v.to(device) for k, v in inputs.items()}, output_hidden_states=True)  # fmt: skip
+        return res["hidden_states"][-3][0].cpu(), offsets
 
-    assert len(word2ph) == len(text) + 2
-    char_to_token = __build_char_to_token_map(offsets, len(text))
+    with torch.no_grad():
+        res, offsets = run(text)
+        style_res_mean = run(assist_text)[0].mean(0) if assist_text else None
 
-    # 문자 단위 특징량: [CLS] + 각 문자 + [SEP]
-    char_level_feature = [res[0]]
-    for char_index in range(len(text)):
-        char_level_feature.append(res[char_to_token[char_index]])
-    char_level_feature.append(res[-1])
-
-    phone_level_feature = []
-    for i in range(len(word2ph)):
-        if assist_text:
-            assert style_res_mean is not None
-            repeat_feature = (
-                char_level_feature[i].repeat(word2ph[i], 1) * (1 - assist_text_weight)
-                + style_res_mean.repeat(word2ph[i], 1) * assist_text_weight
-            )
-        else:
-            repeat_feature = char_level_feature[i].repeat(word2ph[i], 1)
-        phone_level_feature.append(repeat_feature)
-
-    phone_level_feature = torch.cat(phone_level_feature, dim=0)
-
-    return phone_level_feature.T
+    return __to_phone_level(res, style_res_mean, offsets, text, word2ph, assist_text_weight)  # fmt: skip
 
 
 def extract_bert_feature_onnx(
@@ -187,80 +176,33 @@ def extract_bert_feature_onnx(
 
     # 입력 텐서 전송에 사용할 디바이스 종류, 디바이스 ID, 실행 옵션을 가져온다
     device_type, device_id, run_options = get_onnx_device_options(session, onnx_providers)  # fmt: skip
-
-    # 입력을 텐서로 변환
     max_length = __get_max_length(tokenizer)
-    inputs = tokenizer(
-        text,
-        return_tensors="np",
-        return_offsets_mapping=True,
-        truncation=True,
-        max_length=max_length,
-    )
-    offsets = inputs["offset_mapping"][0].tolist()
-    input_tensor = [
-        inputs["input_ids"].astype(np.int64),  # type: ignore
-        inputs["token_type_ids"].astype(np.int64),  # type: ignore
-        inputs["attention_mask"].astype(np.int64),  # type: ignore
-    ]
-    # 추론 디바이스에 입력 텐서를 할당
-    io_binding = session.io_binding()
-    for name, value in zip(input_names, input_tensor):
-        gpu_tensor = onnxruntime.OrtValue.ortvalue_from_numpy(
-            value, device_type, device_id
-        )
-        io_binding.bind_ortvalue_input(name, gpu_tensor)
-    # text에서 BERT 특징량을 추출
-    io_binding.bind_output(output_name, device_type)
-    session.run_with_iobinding(io_binding, run_options=run_options)
-    res = io_binding.get_outputs()[0].numpy()
 
-    style_res_mean = None
-    if assist_text:
-        style_inputs = tokenizer(
-            assist_text,
+    def run(input_text: str) -> tuple[NDArray[Any], list[tuple[int, int]]]:
+        """토큰별 특징량과 토큰별 문자 오프셋을 반환한다"""
+        inputs = tokenizer(
+            input_text,
             return_tensors="np",
+            return_offsets_mapping=True,
             truncation=True,
             max_length=max_length,
         )
-        style_input_tensor = [
-            style_inputs["input_ids"].astype(np.int64),  # type: ignore
-            style_inputs["token_type_ids"].astype(np.int64),  # type: ignore
-            style_inputs["attention_mask"].astype(np.int64),  # type: ignore
+        input_tensor = [
+            inputs[key].astype(np.int64)  # type: ignore
+            for key in ("input_ids", "token_type_ids", "attention_mask")
         ]
-        io_binding = session.io_binding()  # IOBinding은 새로 만들어야 한다
-        for name, value in zip(input_names, style_input_tensor):
+        # 추론 디바이스에 입력 텐서를 할당 (IOBinding은 실행마다 새로 만들어야 한다)
+        io_binding = session.io_binding()
+        for name, value in zip(input_names, input_tensor):
             gpu_tensor = onnxruntime.OrtValue.ortvalue_from_numpy(
                 value, device_type, device_id
             )
             io_binding.bind_ortvalue_input(name, gpu_tensor)
         io_binding.bind_output(output_name, device_type)
         session.run_with_iobinding(io_binding, run_options=run_options)
-        style_res = io_binding.get_outputs()[0].numpy()
-        style_res_mean = np.mean(style_res, axis=0)
+        return io_binding.get_outputs()[0].numpy(), inputs["offset_mapping"][0].tolist()
 
-    assert len(word2ph) == len(text) + 2
-    char_to_token = __build_char_to_token_map(offsets, len(text))
+    res, offsets = run(text)
+    style_res_mean = np.mean(run(assist_text)[0], axis=0) if assist_text else None
 
-    # 문자 단위 특징량: [CLS] + 각 문자 + [SEP]
-    char_level_feature = [res[0]]
-    for char_index in range(len(text)):
-        char_level_feature.append(res[char_to_token[char_index]])
-    char_level_feature.append(res[-1])
-
-    phone_level_feature = []
-    for i in range(len(word2ph)):
-        if assist_text:
-            assert style_res_mean is not None
-            repeat_feature = (
-                np.tile(char_level_feature[i], (word2ph[i], 1))
-                * (1 - assist_text_weight)
-                + np.tile(style_res_mean, (word2ph[i], 1)) * assist_text_weight
-            )
-        else:
-            repeat_feature = np.tile(char_level_feature[i], (word2ph[i], 1))
-        phone_level_feature.append(repeat_feature)
-
-    phone_level_feature = np.concatenate(phone_level_feature, axis=0)
-
-    return phone_level_feature.T
+    return __to_phone_level(res, style_res_mean, offsets, text, word2ph, assist_text_weight)  # fmt: skip

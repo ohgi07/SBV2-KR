@@ -15,6 +15,11 @@ word2ph는 정규화 텍스트의 각 문자에 대응하는 음소 수 리스�
 """
 
 from style_bert_vits2.logging import logger
+from style_bert_vits2.nlp.korean.morph import (
+    apply_morph_rules,
+    clause_boundary_spaces,
+    tokenize,
+)
 from style_bert_vits2.nlp.korean.pronounce import (
     CHOSEONG,
     JONGSEONG,
@@ -36,11 +41,9 @@ def to_pronunciation(norm_text: str) -> str:
     """
     정규화된 텍스트를 발음형으로 변환한다 (표준 발음법 + 형태소 기반 보정).
     출력은 입력과 같은 문자 수이며, 한글 이외 문자의 위치는 변하지 않음이 보장된다.
-    CER 계산 (cer.py)도 같은 발음을 봐야 하므로 이 함수를 거친다.
+    CER 계산 (speech_cer.py)도 같은 발음을 봐야 하므로 이 함수를 거친다.
     """
-    # 형태소 정보에 기반한 보정 (예외 사전·ㄴ첨가·의→에·형태소 경계의 경음화)
-    from style_bert_vits2.nlp.korean.morph import apply_morph_rules, clause_boundary_spaces, tokenize
-
+    # 형태소 정보에 기반한 보정 (예외 사전·ㄴ첨가·의→에·형태소 경계의 경음화).
     # 보정과 절 경계 판정 모두 보정 전 원문의 분석을 쓴다 (보정이 문자 수를 보존해 인덱스가 그대로 맞는다)
     tokens = tokenize(norm_text)
     corrected = apply_morph_rules(norm_text, tokens)
@@ -50,15 +53,9 @@ def to_pronunciation(norm_text: str) -> str:
 def __syllable_to_phones(syllable: str) -> list[str]:
     """발음형 한글 음절 1글자를 자모 음소 리스트로 변환한다"""
     cho, jung, coda = decompose(syllable)
-    phones: list[str] = []
-    # 초성 ㅇ은 무음이므로 음소를 출력하지 않는다
-    if cho != "ㅇ":
-        phones.append(__CHOSEONG_TO_SYMBOL[cho])
-    phones.append(__JUNGSEONG_TO_SYMBOL[jung])
-    if coda:
-        # 표준 발음법 적용 후의 종성은 7종성뿐이어야 한다
-        phones.append(__JONGSEONG_TO_SYMBOL[coda[0]])
-    return phones
+    # 초성 ㅇ은 무음이므로 음소를 출력하지 않는다. 표준 발음법 적용 후의 종성은 7종성 하나뿐이다
+    phones = [] if cho == "ㅇ" else [__CHOSEONG_TO_SYMBOL[cho]]
+    return phones + [__JUNGSEONG_TO_SYMBOL[jung]] + [__JONGSEONG_TO_SYMBOL[c] for c in coda[:1]]
 
 
 def g2p(norm_text: str) -> tuple[list[str], list[int], list[int]]:
@@ -71,26 +68,21 @@ def g2p(norm_text: str) -> tuple[list[str], list[int], list[int]]:
     Returns:
         tuple[list[str], list[int], list[int]]: 음소·톤·word2ph 리스트
     """
-    pronounced = to_pronunciation(norm_text)
-
     phones: list[str] = []
     word2ph: list[int] = []
-    for char in pronounced:
+    for char in to_pronunciation(norm_text):
         if is_hangul_syllable(char):
-            syllable_phones = __syllable_to_phones(char)
-            phones.extend(syllable_phones)
-            word2ph.append(len(syllable_phones))
+            char_phones = __syllable_to_phones(char)
         elif char == " ":
-            phones.append("SP")
-            word2ph.append(1)
+            char_phones = ["SP"]
         elif char in PUNCTUATIONS:
-            phones.append(char)
-            word2ph.append(1)
+            char_phones = [char]
         else:
             # normalize_text()를 거쳤다면 올 수 없지만, 만약을 위해 미지의 문자는 UNK로 처리
             logger.warning(f"Unexpected character in Korean g2p: {char!r}")
-            phones.append("UNK")
-            word2ph.append(1)
+            char_phones = ["UNK"]
+        phones += char_phones
+        word2ph.append(len(char_phones))
 
     # 앞뒤에 패딩 추가 (다른 언어 구현과 같은 형식)
     phones = ["_"] + phones + ["_"]

@@ -18,57 +18,18 @@ from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
 # 기호류 정규화 맵 (일본어 구현을 따르되 한국어에 맞게 조정)
 __REPLACE_MAP = {
-    "：": ",",
-    "；": ",",
-    "，": ",",
-    "。": ".",
+    **dict.fromkeys(["：", "；", "，", "·", "、"], ","),
+    **dict.fromkeys(["。", "．", "\n"], "."),
     "！": "!",
     "？": "?",
-    "\n": ".",
-    "．": ".",
-    "…": "...",
-    "···": "...",
-    "⋯": "...",
-    "·": ",",
-    "、": ",",
-    "„": "'",
-    "“": "'",
-    "”": "'",
-    '"': "'",
-    "‘": "'",
-    "’": "'",
-    "（": "'",
-    "）": "'",
-    "(": "'",
-    ")": "'",
-    "《": "'",
-    "》": "'",
-    "【": "'",
-    "】": "'",
-    "[": "'",
-    "]": "'",
-    "「": "'",
-    "」": "'",
-    "~": "-",
-    "～": "-",
-    "〜": "-",
-    # 하이픈·대시류를 반각 하이픈으로 통일
-    "˗": "-",
-    "‐": "-",
-    "‒": "-",
-    "–": "-",
-    "—": "-",
-    "―": "-",
-    "⁃": "-",
-    "−": "-",
-    "⎯": "-",
-    "⏤": "-",
-    "─": "-",
-    "━": "-",
-    "⸺": "-",
-    "⸻": "-",
+    **dict.fromkeys(["…", "···", "⋯"], "..."),
+    # 따옴표·괄호류는 작은따옴표로
+    **dict.fromkeys("„“”\"‘’（）()《》【】[]「」", "'"),
+    # 물결표·하이픈·대시류를 반각 하이픈으로 통일
+    **dict.fromkeys("~～〜˗‐‒–—―⁃−⎯⏤─━⸺⸻", "-"),
 }
-__REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in __REPLACE_MAP))
+# 긴 키부터 매치해야 한다 (··· 가 · 보다 먼저)
+__REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in sorted(__REPLACE_MAP, key=len, reverse=True)))  # fmt: skip
 
 # 알파벳 → 한국어 이름
 __ALPHABET_MAP = {
@@ -181,15 +142,16 @@ __BEON_NUMBER_PATTERN = re.compile(
     r"(?=출구|버스|채널|터미널|창구|게이트|승강장|플랫폼|문제|노선|좌석|테이블|트랙|[을이]? ?누르|[을이]? ?눌러)"
 )
 
-
-def __read_digits(digits: str) -> str:
-    """숫자열을 낱자 읽기로 변환한다 (0은 공): "112" → "일일이" """
-    return "".join(__DIGIT_NAMES[int(d)] for d in digits)
 __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # 정규화 후에 남기는 것이 허용된 문자 이외를 제거하는 패턴
 __CLEANUP_PATTERN = re.compile(r"[^가-힣 " + "".join(re.escape(p) for p in PUNCTUATIONS) + r"]+")  # fmt: skip
+
+
+def __read_digits(digits: str) -> str:
+    """숫자열을 낱자 읽기로 변환한다 (0은 공): "112" → "일일이" """
+    return "".join(__DIGIT_NAMES[int(d)] for d in digits)
 
 
 def __read_four_digits(num: int) -> str:
@@ -226,30 +188,18 @@ def read_number(num_str: str) -> str:
         # 그룹 단위표에 없는 자릿수. 자릿수 읽기가 성립하지 않으므로 낱자로 돌린다
         int_reading = __read_digits(int_part)
     else:
-        # (그룹 값, 그룹 단위 인덱스)를 하위부터 수집
-        raw_groups: list[tuple[int, int]] = []
-        group_index = 0
-        while int_value > 0:
-            group = int_value % 10000
-            if group > 0:
-                raw_groups.append((group, group_index))
-            int_value //= 10000
-            group_index += 1
-        groups: list[str] = []
-        for group, index in raw_groups:
-            reading = __read_four_digits(group)
-            # 일을 생략하는 단위는 만뿐 (10000→만, 100010000→일억만).
-            # 억 이상은 생략하지 않는다 — 100000000은 [억]이 아니라 [일억]으로 읽는다
-            if group == 1 and index == 1:
-                reading = ""
-            groups.append(reading + __GROUP_UNITS[index])
-        int_reading = "".join(reversed(groups))
+        # 네 자리씩 끊어 하위 그룹부터 읽고 그룹 단위 (만/억/조/경)를 붙인다
+        int_reading = ""
+        for index, unit in enumerate(__GROUP_UNITS):
+            int_value, group = divmod(int_value, 10000)
+            if group:
+                # 일을 생략하는 단위는 만뿐 (10000→만, 100010000→일억만).
+                # 억 이상은 생략하지 않는다 — 100000000은 [억]이 아니라 [일억]으로 읽는다
+                reading = "" if (group == 1 and index == 1) else __read_four_digits(group)
+                int_reading = reading + unit + int_reading
 
-    if frac_part:
-        frac_reading = "점" + "".join(__SINO_DIGITS[int(d)] if d != "0" else "영" for d in frac_part)  # fmt: skip
-    else:
-        frac_reading = ""
-
+    # 소수부는 한 자리씩 (0은 영)
+    frac_reading = "점" + "".join(__SINO_DIGITS[int(d)] or "영" for d in frac_part) if frac_part else ""  # fmt: skip
     return int_reading + frac_reading
 
 

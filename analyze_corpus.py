@@ -21,14 +21,14 @@ from pathlib import Path
 from style_bert_vits2.logging import logger
 from style_bert_vits2.nlp.korean.g2p import g2p
 from style_bert_vits2.nlp.korean.normalizer import normalize_text
-from style_bert_vits2.nlp.symbols import KO_SYMBOLS, PUNCTUATIONS
+from style_bert_vits2.nlp.symbols import KO_SYMBOLS, KO_VOWELS, PUNCTUATIONS
 
 
 # 歯擦音 (치찰음) の初声シンボル (Hangul Jamo)
 SIBILANT_INITIALS = {"ᄉ": "ㅅ", "ᄊ": "ㅆ", "ᄌ": "ㅈ", "ᄍ": "ㅉ", "ᄎ": "ㅊ"}
 
 # 中声シンボルの範囲 (母音コンテキストの判定に使用)
-VOWEL_SYMBOLS = {chr(code) for code in range(0x1161, 0x1176)}
+VOWEL_SYMBOLS = set(KO_VOWELS)
 
 # カバレッジ警告のしきい値
 LOW_COVERAGE_THRESHOLD = 10

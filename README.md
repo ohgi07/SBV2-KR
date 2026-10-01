@@ -152,7 +152,7 @@ python speech_cer.py --model_name YourModel [--whisper_model large-v3] [--unit j
 - **test**: 스크립트에 내장된 고정 일반화 문장 (문장 기호·숫자·치찰음·격음/경음 포함)
 - **train**: 모델의 `train.list`에서 자동 샘플링한 학습 문장 (`--num_train`, 기본 4개) — 암기 성능 추적용으로, 학습이 정상이라면 test보다 CER이 먼저 떨어집니다
 
-CER은 **발음형 자모 기준**으로 계산됩니다 (`style_bert_vits2/nlp/korean/cer.py`):
+CER은 **발음형 자모 기준**으로 계산됩니다 (`speech_cer.py`의 `korean_cer`):
 - 양쪽 텍스트를 정규화·발음 변환 후 비교합니다. ASR의 표기 흔들림(`맛있다`/`마싣따`), 숫자 표기 차이(`3개`/`세 개`), 띄어쓰기·구두점 차이는 오류로 계산되지 않습니다.
 - 자모 단위(기본)는 받침 하나 오류를 1/3 음절로 계산해 음절 단위보다 완만한 신호를 제공합니다 (`--unit syllable`로 변경 가능).
 
