@@ -3,6 +3,7 @@ import gradio as gr
 from style_bert_vits2.constants import GRADIO_THEME
 from style_bert_vits2.logging import logger
 from style_bert_vits2.utils.subprocess import run_script_with_log
+from transcribe import get_initial_prompt
 
 
 def do_slice(
@@ -214,11 +215,11 @@ def create_dataset_app() -> gr.Blocks:
                     info="크게 하면 속도가 빨라지지만 VRAM을 많이 사용",
                     visible=False,
                 )
-                language = gr.Dropdown(["ja", "en", "zh"], value="ja", label="언어")
+                language = gr.Dropdown(["ko", "ja", "en", "zh"], value="ko", label="언어")
                 initial_prompt = gr.Textbox(
                     label="초기 프롬프트",
-                    value="こんにちは。元気、ですかー？ふふっ、私は……ちゃんと元気だよ！",
-                    info="이렇게 전사해 달라는 예문 (문장부호 사용법·웃음 표기·고유명사 등. 언어에 맞는 예문을 입력하세요)",
+                    value=get_initial_prompt("ko"),
+                    info="이렇게 전사해 달라는 예문 (문장부호 사용법·웃음 표기·고유명사 등. 언어를 바꾸면 그 언어의 예문으로 바뀝니다)",
                 )
                 num_beams = gr.Slider(
                     minimum=1,
@@ -267,6 +268,7 @@ def create_dataset_app() -> gr.Blocks:
             inputs=[use_hf_whisper],
             outputs=[whisper_model, hf_repo_id, batch_size, compute_type],
         )
+        language.change(get_initial_prompt, inputs=[language], outputs=[initial_prompt])
 
     return app
 

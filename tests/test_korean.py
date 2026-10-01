@@ -1109,3 +1109,32 @@ class TestWarmStartOnLoad:
         # optimizer state의 KO 행은 warm-start 대상이 아니라 0 (새 파라미터의 초기 state)
         exp_avg = new_opt.state_dict()["state"][0]["exp_avg"]
         assert torch.equal(exp_avg[112:], torch.zeros(len(SYMBOLS) - 112, 4))
+
+
+# ============================================================
+# 전사 초기 프롬프트 (transcribe.py). torch를 임포트하므로 테스트 안에서 임포트한다
+# ============================================================
+
+
+class TestTranscribeInitialPrompt:
+    def test_ko는_한국어_예문이_기본_프롬프트(self):
+        from transcribe import get_initial_prompt
+
+        prompt = get_initial_prompt("ko")
+        assert any("가" <= c <= "힣" for c in prompt)
+        assert not any("぀" <= c <= "ヿ" for c in prompt)  # 가나 섞임 금지
+
+    def test_ja는_기존_일본어_예문(self):
+        from transcribe import get_initial_prompt
+
+        assert get_initial_prompt("ja") == "こんにちは。元気、ですかー？ふふっ、私は……ちゃんと元気だよ！"
+
+    def test_예문이_없는_언어는_빈_프롬프트(self):
+        from transcribe import get_initial_prompt
+
+        assert get_initial_prompt("en") == ""
+
+    def test_직접_지정한_프롬프트가_우선하고_감싼_따옴표는_제거(self):
+        from transcribe import get_initial_prompt
+
+        assert get_initial_prompt("ko", '"네, 그러네요."') == "네, 그러네요."

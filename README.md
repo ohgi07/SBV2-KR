@@ -68,12 +68,14 @@ python initialize.py --skip_default_models
 
 ### 데이터셋
 
-`esd.list`의 언어 컬럼에 `KO`를 지정합니다:
+음성 파일은 `Data/{모델명}/raw/`에, 전사 파일은 `Data/{모델명}/esd.list`에 둡니다. `esd.list`의 경로는 `raw/` 기준이며, 언어 컬럼에 `KO`를 지정합니다:
 
 ```
-wavs/speaker_001.wav|speaker|KO|3일 전, 배가 고팠다.
-wavs/speaker_002.wav|speaker|KO|안녕하세요! 오늘은 날씨가 좋네요.
+speaker_001.wav|speaker|KO|3일 전, 배가 고팠다.
+speaker_002.wav|speaker|KO|안녕하세요! 오늘은 날씨가 좋네요.
 ```
+
+전사가 없다면 WebUI의 데이터셋 탭에서 음성을 자르고 Whisper로 전사해 `esd.list`를 만들 수 있습니다.
 
 > [!IMPORTANT]
 > 대본에는 문장 기호(`! ? … , .`)를 최대한 다양하게 포함하세요. **기반 모델 코퍼스에 등장하지 않는 기호·단어는 합성 품질이 떨어집니다.** 특히 치찰음 ㅅ/ㅆ/ㅈ/ㅊ 포함 단어는 다양한 문맥으로 포함하기를 권장합니다.
@@ -96,6 +98,8 @@ WebUI(`python app.py`)의 학습 탭에서 **JP-Extra판 사용**을 켜고 진�
 python preprocess_all.py --use_jp_extra ...
 python train_ms_jp_extra.py ...
 ```
+
+로컬 GPU가 없다면 Google Colab에서 같은 과정을 진행할 수 있습니다: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ohgi07/SBV2-KR/blob/master/colab.ipynb)
 
 가중치 고정(freeze) 옵션 중 「일본어 bert 부분을 고정」(CLI `--freeze_JP_bert`)은 한국어에도 그대로 적용됩니다. KO는 JP-Extra의 단일 BERT 슬롯을 공유하므로 별도의 한국어용 플래그가 없습니다.
 

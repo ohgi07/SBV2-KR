@@ -12,6 +12,20 @@ from style_bert_vits2.logging import logger
 from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
 
 
+# 言語ごとの初期プロンプトの例文（句読点の入れ方・笑い方等）。例文のない言語はプロンプトなしで書き起こす
+INITIAL_PROMPT_EXAMPLES = {
+    "ko": "안녕하세요. 잘 지내시나요? 후훗, 저는…… 잘 지내고 있어요!",
+    "ja": "こんにちは。元気、ですかー？ふふっ、私は……ちゃんと元気だよ！",
+}
+
+
+def get_initial_prompt(language: str, initial_prompt: Optional[str] = None) -> str:
+    """指定がなければ言語の例文を、指定があれば前後の引用符を外したものを初期プロンプトとして返す"""
+    if initial_prompt is None:
+        return INITIAL_PROMPT_EXAMPLES.get(language, "")
+    return initial_prompt.strip('"')
+
+
 # faster-whisperは並列処理しても速度が向上しないので、単一モデルでループ処理する
 def transcribe_with_faster_whisper(
     model: "WhisperModel",
@@ -116,19 +130,16 @@ def transcribe_files_with_hf_whisper(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, required=True)
+    # 省略時は言語ごとの例文 (INITIAL_PROMPT_EXAMPLES) を使う
+    parser.add_argument("--initial_prompt", type=str, default=None)
     parser.add_argument(
-        "--initial_prompt",
-        type=str,
-        default="こんにちは。元気、ですかー？ふふっ、私は……ちゃんと元気だよ！",
-    )
-    parser.add_argument(
-        "--language", type=str, default="ja", choices=["ja", "en", "zh", "ko"]
+        "--language", type=str, default="ko", choices=["ko", "ja", "en", "zh"]
     )
     parser.add_argument("--model", type=str, default="large-v3")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--compute_type", type=str, default="bfloat16")
     parser.add_argument("--use_hf_whisper", action="store_true")
-    parser.add_argument("--hf_repo_id", type=str, default="")
+    parser.add_argument("--hf_repo_id", type=str, default="openai/whisper-large-v3-turbo")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--no_repeat_ngram_size", type=int, default=10)
@@ -141,9 +152,8 @@ if __name__ == "__main__":
 
     input_dir = dataset_root / model_name / "raw"
     output_file = dataset_root / model_name / "esd.list"
-    initial_prompt: str = args.initial_prompt
-    initial_prompt = initial_prompt.strip('"')
     language: str = args.language
+    initial_prompt = get_initial_prompt(language, args.initial_prompt)
     device: str = args.device
     compute_type: str = args.compute_type
     batch_size: int = args.batch_size
