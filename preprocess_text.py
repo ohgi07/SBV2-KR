@@ -1,6 +1,6 @@
 import argparse
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from random import sample
 from typing import Optional
@@ -192,6 +192,9 @@ def preprocess(
 
     json_config["data"]["spk2id"] = spk_id_map
     json_config["data"]["n_speakers"] = len(spk_id_map)
+    # 推論で言語を省略したときに学習した言語で合成できるよう、行数の多い順に記録する
+    language_counts = Counter(line.split("|")[2] for line in train_list + val_list)
+    json_config["data"]["languages"] = [lang for lang, _ in language_counts.most_common()]
 
     with config_path.open("w", encoding="utf-8") as f:
         json.dump(json_config, f, indent=2, ensure_ascii=False)

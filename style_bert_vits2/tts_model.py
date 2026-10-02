@@ -380,10 +380,18 @@ class TTSModel:
 
         return data
 
+    @property
+    def trained_language(self) -> Optional[Languages]:
+        """
+        config.json に記録された学習言語 (学習データで最も多い言語) を返す。記録のない旧モデルでは None。
+        """
+        languages = self.hyper_parameters.data.languages
+        return Languages(languages[0]) if languages else None
+
     def infer(
         self,
         text: str,
-        language: Languages = Languages.JP,
+        language: Optional[Languages] = None,
         speaker_id: int = 0,
         reference_audio_path: Optional[str] = None,
         sdp_ratio: float = DEFAULT_SDP_RATIO,
@@ -411,7 +419,7 @@ class TTSModel:
 
         Args:
             text (str): 読み上げるテキスト
-            language (Languages, optional): 言語. Defaults to Languages.JP.
+            language (Optional[Languages], optional): 言語。省略時はモデルの学習言語 (記録がなければ JP). Defaults to None.
             speaker_id (int, optional): 話者 ID. Defaults to 0.
             reference_audio_path (Optional[str], optional): 音声スタイルの参照元の音声ファイルのパス. Defaults to None.
             sdp_ratio (float, optional): DP と SDP の混合比。0 で DP のみ、1で SDP のみを使用 (値を大きくするとテンポに緩急がつく). Defaults to DEFAULT_SDP_RATIO.
@@ -438,6 +446,8 @@ class TTSModel:
 
         if pcm_scale not in ("legacy_peak", "fixed"):
             raise ValueError(f"pcm_scale must be 'legacy_peak' or 'fixed': {pcm_scale}")
+        if language is None:
+            language = self.trained_language or Languages.JP
         logger.info(f"Start generating audio data from text:\n{text}")
         # KO は JP-Extra 系アーキテクチャ (単一 BERT 入力) を共用するため許可する
         if language not in ("JP", "KO") and self.hyper_parameters.version.endswith("JP-Extra"):  # fmt: skip
@@ -606,7 +616,7 @@ class TTSModel:
     def infer_stream(
         self,
         text: str,
-        language: Languages = Languages.JP,
+        language: Optional[Languages] = None,
         speaker_id: int = 0,
         reference_audio_path: Optional[str] = None,
         sdp_ratio: float = DEFAULT_SDP_RATIO,
@@ -645,6 +655,8 @@ class TTSModel:
 
         from style_bert_vits2.models.infer import prepare_latent
 
+        if language is None:
+            language = self.trained_language or Languages.JP
         # モデルに触れる前に、すべての入力を検証する
         if self.is_onnx_model:
             raise ValueError("Streaming inference is not supported for ONNX models")
@@ -892,6 +904,7 @@ class TTSModelHolder:
                 gr.Dropdown(choices=styles, value=styles[0]),
                 gr.Button(interactive=True, value="음성 합성"),
                 gr.Dropdown(choices=speakers, value=speakers[0]),
+                self.__language_update_for_gradio(),
             )
         self.current_model = TTSModel(
             model_path=model_path,
@@ -906,7 +919,16 @@ class TTSModelHolder:
             gr.Dropdown(choices=styles, value=styles[0]),
             gr.Button(interactive=True, value="음성 합성"),
             gr.Dropdown(choices=speakers, value=speakers[0]),
+            self.__language_update_for_gradio(),
         )
+
+    def __language_update_for_gradio(self):
+        """ロードしたモデルの学習言語を言語欄に反映する (記録のない旧モデルではユーザーの選択をそのまま残す)"""
+        import gradio as gr
+
+        assert self.current_model is not None
+        language = self.current_model.trained_language
+        return gr.update(value=language.value) if language is not None else gr.update()
 
     def update_model_files_for_gradio(self, model_name: str):
         import gradio as gr

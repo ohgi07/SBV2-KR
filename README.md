@@ -123,6 +123,8 @@ model = TTSModel(model_path=..., config_path=..., style_vec_path=..., device="cu
 sr, audio = model.infer(text="안녕하세요!", language=Languages.KO, style="Neutral")
 ```
 
+`language`를 생략하면 모델이 학습한 언어로 합성합니다. 학습 언어는 전처리할 때 `config.json`의 `data.languages`에 기록되며, 이 기록이 없는 이전 모델은 기존처럼 `JP`가 기본입니다.
+
 스트리밍 합성은 `infer_stream()`으로 합니다. 디코더를 청크 단위로 실행해 만들어지는 대로 16bit PCM(int16) 청크를 돌려주므로, 긴 문장에서 첫 음성을 더 빨리 받을 수 있습니다.
 
 ```python
@@ -142,7 +144,7 @@ with wave.open("out.wav", "wb") as f:
 - API 서버의 `/voice/stream`도 같은 기능을 WAV 스트림으로 제공합니다. 여러 줄(`auto_split`)을 생성하면 총 길이를 미리 알 수 없어 WAV 헤더의 길이 필드가 비어 있습니다(`0xFFFFFFFF`).
 - 웹 UI 음성 합성 탭의 「스트리밍 합성」 버튼으로도 사용할 수 있습니다.
 
-웹 UI 음성 합성 탭에서는 「언어」 드롭다운에서 `KO`를 선택하면 됩니다. 웹 UI는 주요 3개 탭(음성 합성·데이터셋 생성·학습)이 한국어화되어 있고, 스타일 생성·머지·ONNX 변환 탭과 일본어 예문 등 콘텐츠성 텍스트는 원문(일본어)을 유지합니다.
+웹 UI 음성 합성 탭에서는 모델을 로드하면 학습한 언어가 「언어」 드롭다운에 선택되고, API 서버도 `language`를 생략하면 모델의 학습 언어를 씁니다(기록이 없으면 `config.yml`의 `server.language`). 웹 UI는 주요 3개 탭(음성 합성·데이터셋 생성·학습)이 한국어화되어 있고, 스타일 생성·머지·ONNX 변환 탭과 일본어 예문 등 콘텐츠성 텍스트는 원문(일본어)을 유지합니다.
 
 ### 자동 평가 (Whisper 왕복 CER)
 

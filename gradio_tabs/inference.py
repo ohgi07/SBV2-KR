@@ -854,7 +854,7 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
 
         refresh_button.click(refresh_models, outputs=[model_name, model_path, tts_button, stream_button])
 
-        load_button.click(load_model, inputs=[model_name, model_path], outputs=[style, tts_button, speaker, stream_button])
+        load_button.click(load_model, inputs=[model_name, model_path], outputs=[style, tts_button, speaker, language, stream_button])
 
         style_mode.change(
             gr_util,

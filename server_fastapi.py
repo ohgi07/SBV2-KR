@@ -207,7 +207,7 @@ if __name__ == "__main__":
             DEFAULT_LENGTH,
             description="話速。基準は1で大きくするほど音声は長くなり読み上げが遅まる",
         ),
-        language: Languages = Query(ln, description="textの言語"),
+        language: Optional[Languages] = Query(None, description=f"textの言語 (省略時はモデルの学習言語、記録がなければ {ln})"),
         auto_split: bool = Query(DEFAULT_LINE_SPLIT, description="改行で分けて生成"),
         split_interval: float = Query(
             DEFAULT_SPLIT_INTERVAL, description="分けた場合に挟む無音の長さ（秒）"
@@ -239,6 +239,8 @@ if __name__ == "__main__":
             )
         model, speaker_id = resolve_model_and_speaker(model_id, model_name, speaker_id, speaker_name, style)
         assert style is not None
+        if language is None:
+            language = model.trained_language or Languages(ln)
         if encoding is not None:
             text = unquote(text, encoding=encoding)
         sr, audio = model.infer(
@@ -299,7 +301,7 @@ if __name__ == "__main__":
             DEFAULT_LENGTH,
             description="話速。基準は1で大きくするほど音声は長くなり読み上げが遅まる",
         ),
-        language: Languages = Query(ln, description="textの言語"),
+        language: Optional[Languages] = Query(None, description=f"textの言語 (省略時はモデルの学習言語、記録がなければ {ln})"),
         auto_split: bool = Query(DEFAULT_LINE_SPLIT, description="改行で分けて生成"),
         split_interval: float = Query(
             DEFAULT_SPLIT_INTERVAL, description="分けた場合に挟む無音の長さ（秒）"
@@ -332,6 +334,8 @@ if __name__ == "__main__":
             )
         model, speaker_id = resolve_model_and_speaker(model_id, model_name, speaker_id, speaker_name, style)
         assert style is not None
+        if language is None:
+            language = model.trained_language or Languages(ln)
         if encoding is not None:
             text = unquote(text, encoding=encoding)
         # 入力の検証と最初の行の潜在変数の生成はここで終わるため、エラーは応答の送信前に返る

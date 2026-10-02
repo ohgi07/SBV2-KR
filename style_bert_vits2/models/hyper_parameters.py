@@ -60,6 +60,8 @@ class HyperParametersData(BaseModel):
     style2id: dict[str, int] = {
         "Neutral": 0,
     }
+    # 学習データの言語 (行数の多い順)。推論で言語を省略したときの既定値になる (記録のない旧モデルは空)
+    languages: list[str] = []
 
 
 class HyperParametersModelSLM(BaseModel):

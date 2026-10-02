@@ -1204,3 +1204,106 @@ class TestTrainingCheckpointSelection:
         self._touch(tmp_path, "G_1000.pth", "WD_1000.pth", "DUR_1000.pth")
         with pytest.raises(FileNotFoundError):
             find_resume_checkpoints(tmp_path, ["G", "D"])
+
+
+# ============================================================
+# 학습 언어 기록과 추론 기본 언어. 언어를 넘기지 않으면 모델이 학습한 언어로 합성한다
+# ============================================================
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+class TestTrainedLanguage:
+    @staticmethod
+    def _model(languages: list[str]):
+        import numpy as np
+
+        from style_bert_vits2.models.hyper_parameters import HyperParameters
+        from style_bert_vits2.tts_model import TTSModel
+
+        hps = HyperParameters.model_validate({"data": {"languages": languages}})
+        return TTSModel(Path("dummy.safetensors"), hps, np.zeros((1, 256), dtype=np.float32), device="cpu")
+
+    def test_preprocess_text_records_training_languages(self, tmp_path):
+        # preprocess_text.py는 임포트 시점에 pyopenjtalk 워커를 띄우므로 실제 사용처럼 서브프로세스로 실행한다.
+        # 일본어 줄을 섞으면 일본어 G2P 초기화로 25초가 더 걸려 한국어만 쓴다
+        import json
+        import shutil
+        import subprocess
+        import sys
+
+        texts = [("KO", "안녕하세요."), ("KO", "네, 그러네요.")]
+        lines = []
+        for i, (lang, text) in enumerate(texts):
+            (tmp_path / f"{i}.wav").write_bytes(b"")
+            lines.append(f"{tmp_path / f'{i}.wav'}|spk|{lang}|{text}")
+        (tmp_path / "esd.list").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        config_path = tmp_path / "config.json"
+        shutil.copy(REPO_ROOT / "configs" / "config_jp_extra.json", config_path)
+        paths = {"transcription": "esd.list", "cleaned": "esd.list.cleaned", "train": "train.list", "val": "val.list", "config": "config.json"}
+        args = [x for key, name in paths.items() for x in (f"--{key}-path", str(tmp_path / name))]
+        args += ["--val-per-lang", "0", "--use_jp_extra"]
+        subprocess.run([sys.executable, str(REPO_ROOT / "preprocess_text.py"), *args], cwd=REPO_ROOT, check=True, capture_output=True)
+        assert json.loads(config_path.read_text(encoding="utf-8"))["data"]["languages"] == ["KO"]
+
+    def test_trained_language_is_the_first_recorded_language(self):
+        assert self._model(["KO", "JP"]).trained_language == Languages.KO
+
+    def test_model_without_record_has_no_trained_language(self):
+        assert self._model([]).trained_language is None
+
+    def test_infer_defaults_to_trained_language(self, monkeypatch):
+        import numpy as np
+
+        import style_bert_vits2.models.infer as infer_module
+
+        used = []
+        monkeypatch.setattr(infer_module, "infer", lambda **kw: used.append(kw["language"]) or np.zeros(100, dtype=np.float32))
+        model = self._model(["KO"])
+        model.net_g = object()  # 실제 모델 로드 생략
+        model.infer("안녕하세요.")
+        assert used == [Languages.KO]
+
+    def test_infer_defaults_to_jp_without_record(self, monkeypatch):
+        import numpy as np
+
+        import style_bert_vits2.models.infer as infer_module
+
+        used = []
+        monkeypatch.setattr(infer_module, "infer", lambda **kw: used.append(kw["language"]) or np.zeros(100, dtype=np.float32))
+        model = self._model([])
+        model.net_g = object()
+        model.infer("こんにちは。")
+        assert used == [Languages.JP]
+
+    def test_infer_stream_defaults_to_trained_language(self, monkeypatch):
+        import style_bert_vits2.models.infer as infer_module
+
+        used = []
+
+        def fake_prepare_latent(*args, **kw):
+            used.append(kw["language"])
+            raise RuntimeError("stop")
+
+        monkeypatch.setattr(infer_module, "prepare_latent", fake_prepare_latent)
+        model = self._model(["KO"])
+        model.net_g = object()
+        with pytest.raises(RuntimeError, match="stop"):
+            model.infer_stream("안녕하세요.")
+        assert used == [Languages.KO]
+
+    def test_webui_load_selects_trained_language(self, tmp_path):
+        import json
+
+        import numpy as np
+
+        from style_bert_vits2.tts_model import TTSModelHolder
+
+        model_dir = tmp_path / "kss"
+        model_dir.mkdir()
+        (model_dir / "kss_e1_s1.safetensors").write_bytes(b"")
+        np.save(model_dir / "style_vectors.npy", np.zeros((1, 256), dtype=np.float32))
+        (model_dir / "config.json").write_text(json.dumps({"data": {"languages": ["KO"]}}), encoding="utf-8")
+        holder = TTSModelHolder(tmp_path, "cpu", [], ignore_onnx=True)
+        updates = holder.get_model_for_gradio("kss", str(model_dir / "kss_e1_s1.safetensors"))
+        assert updates[3]["value"] == "KO"
