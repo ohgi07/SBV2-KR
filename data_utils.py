@@ -210,8 +210,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             phone = commons.intersperse(phone, 0)
             tone = commons.intersperse(tone, 0)
             language = commons.intersperse(language, 0)
-            for i in range(len(word2ph)):
-                word2ph[i] = word2ph[i] * 2
+            word2ph = [w * 2 for w in word2ph]
             word2ph[0] += 1
         bert_path = wav_path.replace(".wav", ".bert.pt")
         key = bert_feature_key(text, word2ph, len(phone), language_str)
