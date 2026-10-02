@@ -483,102 +483,31 @@ def run():
             #  bucket_cap_mb=512
         )
 
+    # 読み込みに失敗したら黙ってゼロから学習せず中断する (G/D/DUR/WD は同じステップの組で扱う)
+    models = {"G": (net_g, optim_g), "D": (net_d, optim_d)}
+    if net_dur_disc is not None:
+        models["DUR"] = (net_dur_disc, optim_dur_disc)
+    if net_wd is not None:
+        models["WD"] = (net_wd, optim_wd)
     if utils.is_resuming(model_dir):
-        if net_dur_disc is not None:
-            try:
-                _, _, dur_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
-                    utils.checkpoints.get_latest_checkpoint_path(
-                        model_dir, "DUR_*.pth"
-                    ),
-                    net_dur_disc,
-                    optim_dur_disc,
-                    skip_optimizer=hps.train.skip_optimizer,
-                )
-                if not optim_dur_disc.param_groups[0].get("initial_lr"):
-                    optim_dur_disc.param_groups[0]["initial_lr"] = dur_resume_lr
-            except:
-                if not optim_dur_disc.param_groups[0].get("initial_lr"):
-                    optim_dur_disc.param_groups[0]["initial_lr"] = dur_resume_lr
-                print("Initialize dur_disc")
-        if net_wd is not None:
-            try:
-                _, optim_wd, wd_resume_lr, epoch_str = (
-                    utils.checkpoints.load_checkpoint(
-                        utils.checkpoints.get_latest_checkpoint_path(
-                            model_dir, "WD_*.pth"
-                        ),
-                        net_wd,
-                        optim_wd,
-                        skip_optimizer=hps.train.skip_optimizer,
-                    )
-                )
-                if not optim_wd.param_groups[0].get("initial_lr"):
-                    optim_wd.param_groups[0]["initial_lr"] = wd_resume_lr
-            except:
-                if not optim_wd.param_groups[0].get("initial_lr"):
-                    optim_wd.param_groups[0]["initial_lr"] = wd_resume_lr
-                logger.info("Initialize wavlm")
-
-        try:
-            _, optim_g, g_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
-                utils.checkpoints.get_latest_checkpoint_path(model_dir, "G_*.pth"),
-                net_g,
-                optim_g,
-                skip_optimizer=hps.train.skip_optimizer,
+        global_step, paths = utils.checkpoints.find_resume_checkpoints(model_dir, list(models))
+        for prefix, path in paths.items():
+            net, optim = models[prefix]
+            _, _, resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
+                path, net, optim, skip_optimizer=hps.train.skip_optimizer
             )
-            _, optim_d, d_resume_lr, epoch_str = utils.checkpoints.load_checkpoint(
-                utils.checkpoints.get_latest_checkpoint_path(model_dir, "D_*.pth"),
-                net_d,
-                optim_d,
-                skip_optimizer=hps.train.skip_optimizer,
-            )
-            if not optim_g.param_groups[0].get("initial_lr"):
-                optim_g.param_groups[0]["initial_lr"] = g_resume_lr
-            if not optim_d.param_groups[0].get("initial_lr"):
-                optim_d.param_groups[0]["initial_lr"] = d_resume_lr
-
-            epoch_str = max(epoch_str, 1)
-            # global_step = (epoch_str - 1) * len(train_loader)
-            global_step = int(
-                utils.get_steps(
-                    utils.checkpoints.get_latest_checkpoint_path(model_dir, "G_*.pth")
-                )
-            )
-            logger.info(
-                f"******************Found the model. Current epoch is {epoch_str}, gloabl step is {global_step}*********************"
-            )
-        except Exception as e:
-            logger.warning(e)
-            logger.warning(
-                "It seems that you are not using the pretrained models, so we will train from scratch."
-            )
-            epoch_str = 1
-            global_step = 0
+            if not optim.param_groups[0].get("initial_lr"):
+                optim.param_groups[0]["initial_lr"] = resume_lr
+        epoch_str = max(epoch_str, 1)
+        logger.info(
+            f"******************Found the model. Current epoch is {epoch_str}, gloabl step is {global_step}*********************"
+        )
     else:
-        try:
-            _ = utils.safetensors.load_safetensors(
-                os.path.join(model_dir, "G_0.safetensors"), net_g
-            )
-            _ = utils.safetensors.load_safetensors(
-                os.path.join(model_dir, "D_0.safetensors"), net_d
-            )
-            if net_dur_disc is not None:
-                _ = utils.safetensors.load_safetensors(
-                    os.path.join(model_dir, "DUR_0.safetensors"), net_dur_disc
-                )
-            if net_wd is not None:
-                _ = utils.safetensors.load_safetensors(
-                    os.path.join(model_dir, "WD_0.safetensors"), net_wd
-                )
-            logger.info("Loaded the pretrained models.")
-        except Exception as e:
-            logger.warning(e)
-            logger.warning(
-                "It seems that you are not using the pretrained models, so we will train from scratch."
-            )
-        finally:
-            epoch_str = 1
-            global_step = 0
+        for prefix, path in utils.checkpoints.find_pretrained_paths(model_dir, list(models)).items():
+            utils.safetensors.load_safetensors(path, models[prefix][0])
+        logger.info("Loaded the pretrained models.")
+        epoch_str = 1
+        global_step = 0
 
     def lr_lambda(epoch):
         """

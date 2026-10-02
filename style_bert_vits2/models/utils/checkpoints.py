@@ -269,3 +269,41 @@ def get_latest_checkpoint_path(
         raise ValueError(f"No checkpoint found in {model_dir_path} with regex {regex}")
 
     return x
+
+
+def find_pretrained_paths(
+    model_dir_path: Union[str, Path], prefixes: list[str]
+) -> dict[str, Path]:
+    """
+    学習開始時に読み込む事前学習モデル ({prefix}_0.safetensors) のパスを返す。
+    1 つでも欠けていれば、事前学習なしのゼロからの学習が黙って始まらないよう FileNotFoundError を送出する。
+    """
+    paths = {p: Path(model_dir_path) / f"{p}_0.safetensors" for p in prefixes}
+    missing = [path.name for path in paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"Pretrained models not found in {model_dir_path}: {', '.join(missing)}")
+    return paths
+
+
+def find_resume_checkpoints(
+    model_dir_path: Union[str, Path], prefixes: list[str]
+) -> tuple[int, dict[str, Path]]:
+    """
+    学習再開に使うチェックポイント ({prefix}_{step}.pth) を、全 prefix がそろった最新ステップで選んで返す。
+    保存中の中断などで最新の G のステップに欠けがあれば警告し、そろっている直前のステップを使う。
+    そろったステップが 1 つもなければ FileNotFoundError を送出する。
+    """
+    model_dir = Path(model_dir_path)
+    steps = {
+        p: {int(m.group(1)) for f in model_dir.glob(f"{p}_*.pth") if (m := re.fullmatch(rf"{p}_(\d+)\.pth", f.name))}
+        for p in prefixes
+    }
+    complete = set.intersection(*steps.values())
+    if not complete:
+        raise FileNotFoundError(f"No complete checkpoint set ({', '.join(f'{p}_*.pth' for p in prefixes)}) in {model_dir}")
+    step = max(complete)
+    latest = max(steps[prefixes[0]])
+    if latest > step:
+        missing = [f"{p}_{latest}.pth" for p in prefixes if latest not in steps[p]]
+        logger.warning(f"{', '.join(missing)} not found, so resuming from step {step} instead of {latest}")
+    return step, {p: model_dir / f"{p}_{step}.pth" for p in prefixes}

@@ -1138,3 +1138,69 @@ class TestTranscribeInitialPrompt:
         from transcribe import get_initial_prompt
 
         assert get_initial_prompt("ko", '"네, 그러네요."') == "네, 그러네요."
+
+
+# ============================================================
+# 학습 시작·재개 체크포인트 선택. 파일이 빠졌을 때 조용히 처음부터 학습하지 않는지 검증
+# ============================================================
+
+
+class TestTrainingCheckpointSelection:
+    PREFIXES = ["G", "D", "WD"]
+
+    @staticmethod
+    def _touch(directory: Path, *names: str):
+        for name in names:
+            (directory / name).write_bytes(b"")
+
+    def test_returns_pretrained_paths_when_all_present(self, tmp_path):
+        from style_bert_vits2.models.utils.checkpoints import find_pretrained_paths
+
+        self._touch(tmp_path, "G_0.safetensors", "D_0.safetensors", "WD_0.safetensors")
+        paths = find_pretrained_paths(tmp_path, self.PREFIXES)
+        assert paths == {p: tmp_path / f"{p}_0.safetensors" for p in self.PREFIXES}
+
+    def test_missing_pretrained_files_raise_with_names(self, tmp_path):
+        from style_bert_vits2.models.utils.checkpoints import find_pretrained_paths
+
+        self._touch(tmp_path, "D_0.safetensors")
+        with pytest.raises(FileNotFoundError, match="G_0.safetensors, WD_0.safetensors"):
+            find_pretrained_paths(tmp_path, self.PREFIXES)
+
+    def test_resumes_from_latest_complete_step(self, tmp_path):
+        from style_bert_vits2.models.utils.checkpoints import find_resume_checkpoints
+
+        self._touch(tmp_path, *[f"{p}_{s}.pth" for p in self.PREFIXES for s in (1000, 2000)])
+        step, paths = find_resume_checkpoints(tmp_path, self.PREFIXES)
+        assert step == 2000
+        assert paths == {p: tmp_path / f"{p}_2000.pth" for p in self.PREFIXES}
+
+    def test_incomplete_latest_step_warns_and_falls_back(self, tmp_path):
+        from style_bert_vits2.logging import logger
+        from style_bert_vits2.models.utils.checkpoints import find_resume_checkpoints
+
+        self._touch(tmp_path, *[f"{p}_1000.pth" for p in self.PREFIXES], "G_2000.pth", "WD_2000.pth")
+        messages = []
+        sink = logger.add(messages.append, level="WARNING", format="{message}")
+        try:
+            step, paths = find_resume_checkpoints(tmp_path, self.PREFIXES)
+        finally:
+            logger.remove(sink)
+        assert step == 1000
+        assert paths["G"] == tmp_path / "G_1000.pth"
+        assert any("D_2000.pth" in m for m in messages)
+
+    def test_raises_without_complete_step(self, tmp_path):
+        from style_bert_vits2.models.utils.checkpoints import find_resume_checkpoints
+
+        self._touch(tmp_path, "G_1000.pth", "D_2000.pth", "WD_1000.pth")
+        with pytest.raises(FileNotFoundError):
+            find_resume_checkpoints(tmp_path, self.PREFIXES)
+
+    def test_other_prefixes_are_not_mistaken_for_d(self, tmp_path):
+        from style_bert_vits2.models.utils.checkpoints import find_resume_checkpoints
+
+        # WD_·DUR_ 파일은 D_ 파일이 아니다
+        self._touch(tmp_path, "G_1000.pth", "WD_1000.pth", "DUR_1000.pth")
+        with pytest.raises(FileNotFoundError):
+            find_resume_checkpoints(tmp_path, ["G", "D"])
