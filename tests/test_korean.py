@@ -980,7 +980,7 @@ class TestWarmStartMap:
         assert set(KO_JP_INIT_MAP.keys()) == set(KO_SYMBOLS)
         assert len(KO_JP_INIT_MAP) == 46
 
-    def test_확정_매핑_스팟체크(self):
+    def test_spot_check_of_final_weights(self):
         # 스펙 확정 테이블의 대표값 회귀망
         from style_bert_vits2.nlp.korean.warm_start import KO_JP_INIT_MAP
 
@@ -1002,7 +1002,7 @@ class TestWarmStartMap:
         }
         assert {ko: KO_JP_INIT_MAP[ko] for ko in expected} == expected
 
-    def test_음소_매핑은_KO_행_전체를_채운다(self):
+    def test_phoneme_map_covers_every_ko_row(self):
         from style_bert_vits2.nlp.korean.warm_start import KO_WARM_START_MAPS
 
         assert set(KO_WARM_START_MAPS["enc_p.emb.weight"].keys()) == set(range(112, len(SYMBOLS)))
@@ -1026,7 +1026,7 @@ class TestWarmStartExpansion:
         saved, model = self.torch.randn(num_saved, 8), self.torch.randn(num_rows, 8)
         return saved, model, self.expand(key, saved, model)
 
-    def test_음소_KO_행은_JP_행_가중_결합(self):
+    def test_ko_phoneme_rows_are_weighted_jp_rows(self):
         saved, _, out = self._expand("enc_p.emb.weight", 112, len(SYMBOLS))
         assert self.torch.equal(out[:112], saved)
         # 단일 매핑(w=1.0)은 소스 행과 비트 단위로 동일
@@ -1034,26 +1034,26 @@ class TestWarmStartExpansion:
         expected = 0.75 * saved[self.IDX["s"]] + 0.25 * saved[self.IDX["sh"]]
         assert self.torch.allclose(out[self.IDX["ᄉ"]], expected)
 
-    def test_톤_KO_행은_JP_저고_평균(self):
+    def test_ko_tone_row_is_mean_of_jp_low_and_high(self):
         saved, _, out = self._expand("enc_p.tone_emb.weight", NUM_TONES - 1, NUM_TONES)
         jp = LANGUAGE_TONE_START_MAP["JP"]
         assert self.torch.allclose(out[LANGUAGE_TONE_START_MAP["KO"]], 0.5 * saved[jp] + 0.5 * saved[jp + 1])
 
-    def test_언어_KO_행은_JP_행_복사(self):
+    def test_ko_language_row_copies_jp_row(self):
         saved, _, out = self._expand("enc_p.language_emb.weight", 3, 4)
         assert self.torch.equal(out[LANGUAGE_ID_MAP["KO"]], saved[LANGUAGE_ID_MAP["JP"]])
 
-    def test_저장된_KO_행은_덮어쓰지_않는다(self):
+    def test_saved_ko_rows_are_not_overwritten(self):
         saved, _, out = self._expand("enc_p.emb.weight", 120, len(SYMBOLS))
         assert self.torch.equal(out[:120], saved)
         assert self.torch.equal(out[self.IDX["ᆼ"]], saved[self.IDX["N"]])
 
-    def test_소스_JP_행이_없으면_초기값_유지(self):
+    def test_keeps_initial_values_without_jp_source_rows(self):
         # 언어 테이블에 ZH 행만 있으면 소스(JP=1)가 범위 밖
         _, model, out = self._expand("enc_p.language_emb.weight", 1, 4)
         assert self.torch.equal(out[1:], model[1:])
 
-    def test_매핑이_없는_키는_초기값_유지(self):
+    def test_keeps_initial_values_for_unmapped_keys(self):
         _, model, out = self._expand("emb.weight", 112, len(SYMBOLS))
         assert self.torch.equal(out[112:], model[112:])
 
@@ -1072,7 +1072,7 @@ class TestWarmStartOnLoad:
         model.enc_p.emb = torch.nn.Embedding(n_symbols, 4)
         return model
 
-    def test_safetensors_로드(self, tmp_path):
+    def test_load_safetensors(self, tmp_path):
         import torch
         from safetensors.torch import save_file
 
@@ -1087,7 +1087,7 @@ class TestWarmStartOnLoad:
         assert torch.equal(emb[:112], saved)
         assert torch.equal(emb[self.IDX["ᄅ"]], saved[self.IDX["r"]])
 
-    def test_pth_이어_학습(self, tmp_path):
+    def test_resume_from_pth(self, tmp_path):
         import torch
 
         from style_bert_vits2.models.utils.checkpoints import load_checkpoint, save_checkpoint
@@ -1117,24 +1117,24 @@ class TestWarmStartOnLoad:
 
 
 class TestTranscribeInitialPrompt:
-    def test_ko는_한국어_예문이_기본_프롬프트(self):
+    def test_ko_defaults_to_korean_example(self):
         from transcribe import get_initial_prompt
 
         prompt = get_initial_prompt("ko")
         assert any("가" <= c <= "힣" for c in prompt)
         assert not any("぀" <= c <= "ヿ" for c in prompt)  # 가나 섞임 금지
 
-    def test_ja는_기존_일본어_예문(self):
+    def test_ja_keeps_japanese_example(self):
         from transcribe import get_initial_prompt
 
         assert get_initial_prompt("ja") == "こんにちは。元気、ですかー？ふふっ、私は……ちゃんと元気だよ！"
 
-    def test_예문이_없는_언어는_빈_프롬프트(self):
+    def test_language_without_example_gets_empty_prompt(self):
         from transcribe import get_initial_prompt
 
         assert get_initial_prompt("en") == ""
 
-    def test_직접_지정한_프롬프트가_우선하고_감싼_따옴표는_제거(self):
+    def test_explicit_prompt_wins_and_is_unquoted(self):
         from transcribe import get_initial_prompt
 
         assert get_initial_prompt("ko", '"네, 그러네요."') == "네, 그러네요."
