@@ -1447,3 +1447,34 @@ class TestPreprocessCache:
         os.utime(spec_path, (2000, 2000))
         spec, _ = loader.get_audio(wav)
         assert torch.equal(spec, torch.zeros(3))
+
+
+# ============================================================
+# 학습 시작 시 스타일 벡터. 이전 전처리가 wavs/에 남긴 스타일 폴더가 다시 스타일로 잡히지 않는지 검증
+# ============================================================
+
+
+class TestDefaultStyleFromLists:
+    def test_styles_left_over_from_earlier_runs_are_ignored(self, tmp_path):
+        # angry는 raw/에서 지웠지만 resample이 wavs/를 비우지 않아 남은 이전 실행의 흔적
+        import json
+
+        import numpy as np
+
+        from default_style import save_styles_by_dirs
+
+        wavs, lines = tmp_path / "wavs", []
+        for style, value in {"happy": 1.0, "sad": 3.0, "angry": -10.0}.items():
+            (wavs / style).mkdir(parents=True)
+            wav = wavs / style / "0.wav"
+            np.save(f"{wav}.npy", np.full(256, value, dtype=np.float32))
+            if style != "angry":
+                lines.append(f"{wav}|spk|KO|가\n")
+        (tmp_path / "train.list").write_text("".join(lines), encoding="utf-8")
+        (tmp_path / "config.json").write_text(json.dumps({"data": {}}), encoding="utf-8")
+
+        out = tmp_path / "out"
+        save_styles_by_dirs(wavs, out, tmp_path / "config.json", out / "config.json", list_paths=[tmp_path / "train.list"])
+        style2id = json.loads((out / "config.json").read_text(encoding="utf-8"))["data"]["style2id"]
+        assert style2id == {"Neutral": 0, "happy": 1, "sad": 2}
+        assert np.load(out / "style_vectors.npy")[0][0] == 2.0

@@ -203,6 +203,7 @@ def run():
             config.out_dir,
             config_path=args.config,
             config_output_path=os.path.join(config.out_dir, "config.json"),
+            list_paths=[hps.data.training_files, hps.data.validation_files],
         )
 
     torch.manual_seed(hps.train.seed)
