@@ -1,4 +1,5 @@
 import argparse
+import sys
 from multiprocessing import cpu_count
 
 from gradio_tabs.train import preprocess_all
@@ -94,7 +95,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    preprocess_all(
+    success, message = preprocess_all(
         model_name=args.model_name,
         batch_size=args.batch_size,
         epochs=args.epochs,
@@ -112,3 +113,6 @@ if __name__ == "__main__":
         log_interval=args.log_interval,
         yomi_error=args.yomi_error,
     )
+    # 失敗しても終了コードが 0 だと、続けて実行する学習コマンドが壊れた前処理結果のまま走る
+    if not success:
+        sys.exit(message)
