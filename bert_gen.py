@@ -6,6 +6,7 @@ import torch.multiprocessing as mp
 from tqdm import tqdm
 
 from config import get_config
+from data_utils import bert_feature_key, load_bert_feature, save_bert_feature
 from style_bert_vits2.constants import Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons
@@ -54,13 +55,12 @@ def process_line(x: tuple[str, bool]):
 
     bert_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".bert.pt")
 
-    try:
-        bert = torch.load(bert_path)
-        assert bert.shape[-1] == len(phone)
-    except Exception:
+    # テキスト・音素の割り当て・BERT モデルが前回と同じなら生成済みの特徴量をそのまま使う
+    key = bert_feature_key(text, word2ph, len(phone), language_str)
+    if load_bert_feature(bert_path, key, len(phone)) is None:
         bert = extract_bert_feature(text, word2ph, Languages(language_str), device)
         assert bert.shape[-1] == len(phone)
-        torch.save(bert, bert_path)
+        save_bert_feature(bert_path, bert, key)
 
 
 preprocess_text_config = config.preprocess_text_config

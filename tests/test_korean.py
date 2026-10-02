@@ -1307,3 +1307,130 @@ class TestTrainedLanguage:
         holder = TTSModelHolder(tmp_path, "cpu", [], ignore_onnx=True)
         updates = holder.get_model_for_gradio("kss", str(model_dir / "kss_e1_s1.safetensors"))
         assert updates[3]["value"] == "KO"
+
+
+# ============================================================
+# 전처리 캐시(.bert.pt·.spec.pt) 무효화. 입력이 바뀌었는데 예전 특징량으로 학습하지 않는지 검증
+# ============================================================
+
+
+class TestPreprocessCache:
+    PHONES = ["_", "ᄀ", "ᅡ", "_"]
+    WORD2PH = [1, 2, 1]
+
+    def _loader(self, tmp_path):
+        import wave
+
+        from data_utils import TextAudioSpeakerLoader
+        from style_bert_vits2.models.hyper_parameters import HyperParametersData
+
+        wav = tmp_path / "a.wav"
+        with wave.open(str(wav), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(44100)
+            w.writeframes(b"\0\0" * 22050)
+        fields = [str(wav), "spk", "KO", "가", " ".join(self.PHONES), " ".join(["0"] * len(self.PHONES))]
+        (tmp_path / "train.list").write_text("|".join(fields + [" ".join(map(str, self.WORD2PH))]) + "\n", encoding="utf-8")
+        hps = HyperParametersData(use_jp_extra=True, spk2id={"spk": 0})
+        return TextAudioSpeakerLoader(str(tmp_path / "train.list"), hps), str(wav)
+
+    def _get_text(self, loader, wav):
+        return loader.get_text("가", list(self.WORD2PH), list(self.PHONES), [0] * len(self.PHONES), "KO", wav)
+
+    def _current_key(self):
+        from data_utils import bert_feature_key
+
+        # add_blank 후의 음소 수와 word2ph (bert_gen과 학습 로더가 같은 값으로 지문을 만든다)
+        word2ph = [w * 2 for w in self.WORD2PH]
+        word2ph[0] += 1
+        return bert_feature_key("가", word2ph, 2 * len(self.PHONES) + 1, "KO")
+
+    def test_bert_feature_key_changes_with_text_and_alignment(self):
+        from data_utils import bert_feature_key
+
+        key = bert_feature_key("안녕", [1, 2, 2, 1], 6, "KO")
+        assert key == bert_feature_key("안녕", [1, 2, 2, 1], 6, "KO")
+        assert key != bert_feature_key("안녕!", [1, 2, 2, 1], 6, "KO")
+        assert key != bert_feature_key("안녕", [1, 3, 1, 1], 6, "KO")
+
+    def test_saved_bert_feature_loads_only_with_matching_key_and_length(self, tmp_path):
+        import torch
+
+        from data_utils import load_bert_feature, save_bert_feature
+
+        path = str(tmp_path / "a.bert.pt")
+        bert = torch.randn(1024, 5)
+        save_bert_feature(path, bert, "k1")
+        assert torch.equal(load_bert_feature(path, "k1", 5), bert)
+        assert load_bert_feature(path, "k2", 5) is None
+        assert load_bert_feature(path, "k1", 6) is None
+
+    def test_legacy_bert_feature_is_regenerated_but_still_trainable(self, tmp_path):
+        import torch
+
+        from data_utils import load_bert_feature
+
+        path = str(tmp_path / "a.bert.pt")
+        bert = torch.randn(1024, 5)
+        torch.save(bert, path)  # 지문이 없는 예전 형식
+        assert load_bert_feature(path, "k1", 5) is None
+        assert torch.equal(load_bert_feature(path, "k1", 5, allow_legacy=True), bert)
+
+    def test_unreadable_bert_feature_is_none(self, tmp_path):
+        from data_utils import load_bert_feature
+
+        path = tmp_path / "a.bert.pt"
+        path.write_bytes(b"broken")
+        assert load_bert_feature(str(path), "k1", 5, allow_legacy=True) is None
+
+    def test_training_loader_uses_current_bert_feature(self, tmp_path):
+        import torch
+
+        from data_utils import save_bert_feature
+
+        loader, wav = self._loader(tmp_path)
+        save_bert_feature(wav.replace(".wav", ".bert.pt"), torch.ones(1024, 9), self._current_key())
+        _, ja_bert, *_ = self._get_text(loader, wav)
+        assert torch.equal(ja_bert, torch.ones(1024, 9))
+
+    def test_training_loader_rejects_outdated_bert_feature(self, tmp_path):
+        import torch
+
+        from data_utils import save_bert_feature
+
+        loader, wav = self._loader(tmp_path)
+        save_bert_feature(wav.replace(".wav", ".bert.pt"), torch.ones(1024, 9), "outdated")
+        with pytest.raises(RuntimeError, match="bert_gen"):
+            self._get_text(loader, wav)
+
+    def test_training_loader_reports_missing_bert_feature(self, tmp_path):
+        loader, wav = self._loader(tmp_path)
+        with pytest.raises(RuntimeError, match="bert_gen"):
+            self._get_text(loader, wav)
+
+    def test_training_loader_recomputes_spec_older_than_audio(self, tmp_path):
+        import os
+
+        import torch
+
+        loader, wav = self._loader(tmp_path)
+        spec_path = wav.replace(".wav", ".spec.pt")
+        torch.save(torch.zeros(3), spec_path)
+        os.utime(spec_path, (1000, 1000))
+        os.utime(wav, (2000, 2000))
+        spec, _ = loader.get_audio(wav)
+        assert spec.shape[0] == loader.filter_length // 2 + 1
+
+    def test_training_loader_reuses_spec_newer_than_audio(self, tmp_path):
+        import os
+
+        import torch
+
+        loader, wav = self._loader(tmp_path)
+        spec_path = wav.replace(".wav", ".spec.pt")
+        torch.save(torch.zeros(3), spec_path)
+        os.utime(wav, (1000, 1000))
+        os.utime(spec_path, (2000, 2000))
+        spec, _ = loader.get_audio(wav)
+        assert torch.equal(spec, torch.zeros(3))

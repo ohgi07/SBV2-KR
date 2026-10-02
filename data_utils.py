@@ -1,6 +1,8 @@
+import hashlib
 import os
 import random
 import sys
+from typing import Optional
 
 import numpy as np
 import torch
@@ -9,6 +11,7 @@ from tqdm import tqdm
 
 from config import get_config
 from mel_processing import mel_spectrogram_torch, spectrogram_torch
+from style_bert_vits2.constants import DEFAULT_BERT_MODEL_PATHS, Languages
 from style_bert_vits2.logging import logger
 from style_bert_vits2.models import commons
 from style_bert_vits2.models.hyper_parameters import HyperParametersData
@@ -17,6 +20,51 @@ from style_bert_vits2.nlp import cleaned_text_to_sequence
 
 
 config = get_config()
+
+
+def bert_feature_key(text: str, word2ph: list[int], num_phones: int, language_str: str) -> str:
+    """
+    .bert.pt の内容を決める入力 (正規化テキスト・word2ph・音素数・言語・BERT モデル) から指紋を作る。
+    BERT モデルはディレクトリ名で識別する (ローカルと Colab で絶対パスが違ってもキャッシュを使い回せるように)。
+    """
+    bert_name = DEFAULT_BERT_MODEL_PATHS[Languages(language_str)].name
+    source = f"{language_str}|{bert_name}|{num_phones}|{word2ph}|{text}"
+    return hashlib.sha1(source.encode("utf-8")).hexdigest()
+
+
+def save_bert_feature(bert_path: str, bert: torch.Tensor, key: str) -> None:
+    """BERT 特徴量を指紋つきで保存する"""
+    torch.save({"bert": bert, "key": key}, bert_path)
+
+
+def load_bert_feature(
+    bert_path: str, key: str, num_phones: int, allow_legacy: bool = False
+) -> Optional[torch.Tensor]:
+    """
+    指紋と音素数が一致する .bert.pt の BERT 特徴量を返す。読めない・入力が変わった・長さが合わない場合は None。
+    allow_legacy=True なら指紋のない旧形式も音素数だけで受け入れる (前処理をやり直さずに学習を再開できるように)。
+    """
+    try:
+        data = torch.load(bert_path)
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        bert = data["bert"] if data.get("key") == key else None
+    else:
+        bert = data if allow_legacy else None
+    return bert if bert is not None and bert.shape[-1] == num_phones else None
+
+
+def load_fresh_cache(cache_path: str, source_path: str) -> Optional[torch.Tensor]:
+    """source_path より古くないキャッシュだけを読み込む (音声の再リサンプル・差し替え後に古いキャッシュを使わない)"""
+    try:
+        if os.path.getmtime(cache_path) < os.path.getmtime(source_path):
+            return None
+        return torch.load(cache_path)
+    except Exception:
+        return None
+
+
 """Multi speaker version"""
 
 
@@ -128,9 +176,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         spec_filename = filename.replace(".wav", ".spec.pt")
         if self.use_mel_spec_posterior:
             spec_filename = spec_filename.replace(".spec.pt", ".mel.pt")
-        try:
-            spec = torch.load(spec_filename)
-        except:
+        spec = load_fresh_cache(spec_filename, filename)
+        if spec is None:
             if self.use_mel_spec_posterior:
                 spec = mel_spectrogram_torch(
                     audio_norm,
@@ -167,12 +214,10 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                 word2ph[i] = word2ph[i] * 2
             word2ph[0] += 1
         bert_path = wav_path.replace(".wav", ".bert.pt")
-        try:
-            bert_ori = torch.load(bert_path)
-            assert bert_ori.shape[-1] == len(phone)
-        except Exception as e:
-            logger.warning("Bert load Failed")
-            logger.warning(e)
+        key = bert_feature_key(text, word2ph, len(phone), language_str)
+        bert_ori = load_bert_feature(bert_path, key, len(phone), allow_legacy=True)
+        if bert_ori is None:
+            raise RuntimeError(f"{bert_path} is missing or outdated. Run bert_gen.py (preprocessing) again.")
 
         if language_str == "ZH":
             bert = bert_ori
