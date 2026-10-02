@@ -1231,26 +1231,32 @@ class TestTrainedLanguage:
         hps = HyperParameters.model_validate({"data": {"languages": languages}})
         return TTSModel(Path("dummy.safetensors"), hps, np.zeros((1, 256), dtype=np.float32), device="cpu")
 
-    def test_preprocess_text_records_training_languages(self, tmp_path):
-        # preprocess_text.py는 임포트 시점에 pyopenjtalk 워커를 띄우므로 실제 사용처럼 서브프로세스로 실행한다.
+    def test_preprocess_text_records_training_languages(self, tmp_path, monkeypatch):
+        # preprocess_text.py는 임포트할 때 pyopenjtalk 워커를 띄우고 사용자 사전을 적용한다.
+        # 한국어 줄에는 둘 다 필요 없으므로 막고 같은 프로세스에서 실행한다 (서브프로세스로 돌리면 10초 걸린다).
+        # 초기화를 막은 모듈이 sys.modules 에 남지 않도록 import 대신 run_path 로 읽는다.
         # 일본어 줄을 섞으면 일본어 G2P 초기화로 25초가 더 걸려 한국어만 쓴다
         import json
+        import runpy
         import shutil
-        import subprocess
-        import sys
 
-        texts = [("KO", "안녕하세요."), ("KO", "네, 그러네요.")]
+        from style_bert_vits2.nlp.japanese import pyopenjtalk_worker, user_dict
+
+        monkeypatch.setattr(pyopenjtalk_worker, "initialize_worker", lambda: None)
+        monkeypatch.setattr(user_dict, "update_dict", lambda: None)
+        preprocess = runpy.run_path(str(REPO_ROOT / "preprocess_text.py"))["preprocess"]
+
         lines = []
-        for i, (lang, text) in enumerate(texts):
+        for i, text in enumerate(["안녕하세요.", "네, 그러네요."]):
             (tmp_path / f"{i}.wav").write_bytes(b"")
-            lines.append(f"{tmp_path / f'{i}.wav'}|spk|{lang}|{text}")
+            lines.append(f"{tmp_path / f'{i}.wav'}|spk|KO|{text}")
         (tmp_path / "esd.list").write_text("\n".join(lines) + "\n", encoding="utf-8")
         config_path = tmp_path / "config.json"
         shutil.copy(REPO_ROOT / "configs" / "config_jp_extra.json", config_path)
-        paths = {"transcription": "esd.list", "cleaned": "esd.list.cleaned", "train": "train.list", "val": "val.list", "config": "config.json"}
-        args = [x for key, name in paths.items() for x in (f"--{key}-path", str(tmp_path / name))]
-        args += ["--val-per-lang", "0", "--use_jp_extra"]
-        subprocess.run([sys.executable, str(REPO_ROOT / "preprocess_text.py"), *args], cwd=REPO_ROOT, check=True, capture_output=True)
+        preprocess(
+            transcription_path=tmp_path / "esd.list", cleaned_path=None, train_path=tmp_path / "train.list", val_path=tmp_path / "val.list",
+            config_path=config_path, val_per_lang=0, max_val_total=0, use_jp_extra=True, yomi_error="raise", correct_path=False,
+        )
         assert json.loads(config_path.read_text(encoding="utf-8"))["data"]["languages"] == ["KO"]
 
     def test_trained_language_is_the_first_recorded_language(self):
