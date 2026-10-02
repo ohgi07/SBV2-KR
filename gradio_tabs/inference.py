@@ -5,6 +5,7 @@ from typing import Optional
 
 import gradio as gr
 import numpy as np
+import torch
 
 from style_bert_vits2.constants import (
     DEFAULT_ASSIST_TEXT_WEIGHT,
@@ -209,6 +210,9 @@ def make_non_interactive():
 # ストリーミング出力はこの秒数以上ためてから Gradio に渡す (upstream の値。実際の再生で確認して調整する)
 STREAM_MIN_CHUNK_SECONDS = 1.0
 
+# GPU メモリ不足時の案内。必要メモリは改行で区切られた 1 行の長さの 2 乗で増え、ストリーミングでも減らない
+OOM_MESSAGE = "Error: GPU 메모리가 부족합니다. 긴 텍스트는 문장 사이에 줄바꿈을 넣고 '줄바꿈 단위로 나눠서 생성'을 켜 주세요. 스트리밍 합성도 한 줄이 길면 메모리 사용량이 줄지 않습니다."
+
 
 def make_stream_interactive():
     return gr.update(interactive=True, value="스트리밍 합성")
@@ -342,10 +346,13 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
             )
         except InvalidToneError as e:
             logger.error(f"Tone error: {e}")
-            return f"Error: 악센트 지정이 잘못되었습니다:\n{e}", None, kata_tone_json_str
+            return f"Error: 악센트 지정이 잘못되었습니다:\n{e}", None, kata_tone_json_str, gr.skip()
         except ValueError as e:
             logger.error(f"Value error: {e}")
-            return f"Error: {e}", None, kata_tone_json_str
+            return f"Error: {e}", None, kata_tone_json_str, gr.skip()
+        except torch.cuda.OutOfMemoryError as e:
+            logger.error(f"CUDA out of memory: {e}")
+            return OOM_MESSAGE, None, kata_tone_json_str, gr.skip()
 
         end_time = datetime.datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -419,6 +426,10 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
             logger.error(f"Value error: {e}")
             yield f"Error: {e}", None, gr.skip()
             return
+        except torch.cuda.OutOfMemoryError as e:
+            logger.error(f"CUDA out of memory: {e}")
+            yield OOM_MESSAGE, None, gr.skip()
+            return
 
         min_samples = int(stream.sample_rate * STREAM_MIN_CHUNK_SECONDS)
         buffer: list[np.ndarray] = []
@@ -434,6 +445,10 @@ def create_inference_app(model_holder: TTSModelHolder) -> gr.Blocks:
             # 最後の残りは 1 秒未満でも必ず送る
             if buffered > 0:
                 yield gr.skip(), (stream.sample_rate, np.concatenate(buffer)), gr.skip()
+        except torch.cuda.OutOfMemoryError as e:
+            logger.error(f"CUDA out of memory during streaming: {e}")
+            yield OOM_MESSAGE, gr.skip(), gr.skip()
+            return
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             yield f"Error: {e}", gr.skip(), gr.skip()
