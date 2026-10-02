@@ -402,8 +402,15 @@ class TestHfBackupPruning:
             self.deleted = [f.file_oid for f in files]
 
     def _run(self, monkeypatch, fake):
+        import torch
+
+        # 학습 스크립트는 임포트할 때 torch 스레드 수를 1로 바꾸므로 원래대로 되돌린다
+        # (그대로 두면 뒤의 스트리밍 테스트에서 첫 디코더 호출이 0.5초에서 25초 이상으로 느려진다)
+        num_threads, precision = torch.get_num_threads(), torch.get_float32_matmul_precision()
         import train_ms_jp_extra
 
+        torch.set_num_threads(num_threads)
+        torch.set_float32_matmul_precision(precision)
         monkeypatch.setattr(train_ms_jp_extra, "api", fake)
         train_ms_jp_extra.backup_to_hf("user/repo")
         return fake
