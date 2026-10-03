@@ -51,7 +51,7 @@ class TestSymbols:
         # 既存の並び ([PAD] + NORMAL + PUNCTUATION) が先頭に保持されている
         assert SYMBOLS[0] == "_"
         pun_start = len(SYMBOLS) - len(KO_SYMBOLS) - len(PUNCTUATION_SYMBOLS)
-        assert SYMBOLS[pun_start : pun_start + len(PUNCTUATION_SYMBOLS)] == PUNCTUATION_SYMBOLS  # fmt: skip
+        assert SYMBOLS[pun_start : pun_start + len(PUNCTUATION_SYMBOLS)] == PUNCTUATION_SYMBOLS
 
     def test_ko_symbols_unique(self):
         assert len(SYMBOLS) == len(set(SYMBOLS))
@@ -486,11 +486,7 @@ class TestCheckpointOptimizerCompat:
 
 
 class TestBertModelDtype:
-    """
-    transformers 5.x は config の torch_dtype を既定で尊重するため、fp16 で保存された
-    モデル (ku-nlp/deberta-v2-large-japanese-char-wwm など) が half でロードされ、
-    下流の fp32 conv と dtype が衝突する。明示的に fp32 でロードすることの検証。
-    """
+    """fp16 で保存された JP BERT が fp32 でロードされることの検証 (理由は bert_models.load_model のコメント)"""
 
     def test_jp_bert_loads_as_float32(self):
         import torch
@@ -575,7 +571,7 @@ class TestRobertaCompatibility:
 
         self._inject_ko_model(model, tokenizer)
         try:
-            norm_text, phones, tones, word2ph = clean_text("3일 전, 배가 고팠다.", Languages.KO)  # fmt: skip
+            norm_text, phones, tones, word2ph = clean_text("3일 전, 배가 고팠다.", Languages.KO)
             feature = extract_bert_feature(norm_text, word2ph, Languages.KO, "cpu")
             assert tuple(feature.shape) == (config.hidden_size, len(phones))
             # assist_text (スタイル参照) 経路も RoBERTa で動作する
@@ -594,11 +590,6 @@ class TestRobertaCompatibility:
         klue_tokenizer = transformers.AutoTokenizer.from_pretrained(klue_tokenizer_dir)
         assert get_max_length(klue_tokenizer) == 512
 
-        kcbert_dir = Path(__file__).parent.parent / "bert" / "kcbert-large"
-        if (kcbert_dir / "vocab.txt").exists():
-            kcbert_tokenizer = transformers.AutoTokenizer.from_pretrained(str(kcbert_dir))  # fmt: skip
-            assert get_max_length(kcbert_tokenizer) == 300
-
         # model_max_length が異常値 (未設定プレースホルダー) の場合はフォールバック
         class FakeTokenizer:
             model_max_length = int(1e30)
@@ -611,7 +602,7 @@ class TestRobertaCompatibility:
         build = _bert_feature_private("__build_char_to_token_map")
         tokenizer = transformers.AutoTokenizer.from_pretrained(klue_tokenizer_dir)
         long_text = normalize_text("오늘은 정말 길고 긴 하루였다. " * 100)
-        inputs = tokenizer(long_text, return_offsets_mapping=True, truncation=True, max_length=64)  # fmt: skip
+        inputs = tokenizer(long_text, return_offsets_mapping=True, truncation=True, max_length=64)
         num_tokens = len(inputs["input_ids"])
         mapping = build(inputs["offset_mapping"], len(long_text))
         assert len(mapping) == len(long_text)
@@ -632,7 +623,7 @@ class TestRobertaCompatibility:
             bert_models.load_tokenizer(Languages.KO, klue_tokenizer_dir)
             assert type(model).__name__ == "RobertaForMaskedLM"
 
-            # KcBERT の上限 300 トークンを超える長文でも RoBERTa の 512 で処理できる
+            # 300 トークンを超える長文も RoBERTa の上限 512 の範囲で処理できる
             long_text = "오늘은 정말 길고 긴 하루였다. " * 40
             norm_text, phones, tones, word2ph = clean_text(long_text, Languages.KO)
             feature = extract_bert_feature(norm_text, word2ph, Languages.KO, "cpu")
@@ -664,7 +655,7 @@ class TestG2P:
 
     def test_cleaned_text_to_sequence_ko(self):
         norm_text, phones, tones, word2ph = clean_text("반갑습니다.", Languages.KO)
-        phone_ids, tone_ids, lang_ids = cleaned_text_to_sequence(phones, tones, Languages.KO)  # fmt: skip
+        phone_ids, tone_ids, lang_ids = cleaned_text_to_sequence(phones, tones, Languages.KO)
         assert len(phone_ids) == len(tone_ids) == len(lang_ids)
         assert all(l == LANGUAGE_ID_MAP["KO"] for l in lang_ids)
         assert all(t == LANGUAGE_TONE_START_MAP["KO"] for t in tone_ids)
@@ -889,22 +880,6 @@ class TestBertFeatureAlignment:
         mapping = build(offsets, 3)
         # 先頭の未カバー文字は直後のトークンで埋められる
         assert mapping == [1, 1, 1]
-
-    def test_kcbert_tokenizer_alignment(self):
-        """実際の KcBERT トークナイザーで文字→トークン対応が構築できる"""
-        transformers = pytest.importorskip("transformers")
-        tokenizer_path = Path(__file__).parent.parent / "bert" / "kcbert-large"
-        if not (tokenizer_path / "vocab.txt").exists():
-            pytest.skip("kcbert-large tokenizer files not found")
-        tokenizer = transformers.AutoTokenizer.from_pretrained(str(tokenizer_path))
-
-        build = _bert_feature_private("__build_char_to_token_map")
-        text = normalize_text("삼일 전, 배가 고팠다.")
-        inputs = tokenizer(text, return_offsets_mapping=True)
-        num_tokens = len(inputs["input_ids"])
-        mapping = build(inputs["offset_mapping"], len(text))
-        assert len(mapping) == len(text)
-        assert all(0 <= t < num_tokens for t in mapping)
 
 
 class TestWordBoundaryRules:

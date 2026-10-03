@@ -1,30 +1,17 @@
 """
-韓国語 TTS モデルの Whisper 往復 CER 自動評価。
+한국어 TTS 모델의 Whisper 왕복 CER 자동 평가 (낮을수록 좋음).
 
-学習された各チェックポイントでテスト文を合成し、faster-whisper で音声認識した
-結果と元テキストの CER (発音形の字母基準) を計算する。グラフ上の loss が
-下がっていても品質が悪い場合 (NDC 発表で指摘された問題) を、人が全部聴かずに
-検出するための定量評価。CER は低いほど良い。
+체크포인트마다 테스트 문장을 합성해 faster-whisper로 인식하고 원문과의 CER을 계산한다.
+loss가 내려가도 품질이 나쁜 경우를 사람이 전부 듣지 않고 찾기 위한 지표다.
+test 그룹 (아래 test_texts, 일반화)과 train 그룹 (train.list에서 샘플링, 암기)을 따로 집계한다.
 
-テスト文は 2 グループで集計する:
-- test: 汎化性能用の固定文 (下記 test_texts)
-- train: モデルの train.list から自動サンプリングした学習文 (暗記性能の追跡用。
-  学習が正常なら test より先に CER が下がる)
+CER은 양쪽을 합성과 같은 g2p.to_pronunciation()으로 발음형으로 바꾼 뒤 자모 (또는 음절) 단위로 비교한다.
+표기만 다른 같은 발음 (맛있다 vs 마싯따, 3개 vs 세 개)을 오류로 세지 않기 위해서이며, 공백·문장 기호는 제외한다.
 
-使い方:
+사용법:
     python speech_cer.py --model_name YourModel [--device cuda] [--whisper_model large-v3]
 
-結果は cer_results/cer_{model_name}.csv と .png に保存される。
-
-CER 계산 (발음형 비교):
-정서법끼리 직접 비교하면 발음이 같아도 표기만 달라서 오류로 계산되어 버리므로
-(예: 참조 "맛있다" vs ASR 출력 "마싯따"), 양쪽 텍스트를 발음형으로 변환한 뒤 비교한다.
-변환은 g2p.to_pronunciation()을 쓴다 — 합성에 쓰인 것과 다른 발음으로 재면 지표가 어긋난다.
-- 숫자·기호는 정규화로 읽기 한글로 변환된다 (3개 vs 세 개 → 일치)
-- 공백·문장 기호는 비교에서 제외된다 (ASR 띄어쓰기의 흔들림을 무시)
-- 단위는 자모 (jamo) 또는 음절 (syllable)을 선택할 수 있다. 자모 단위 쪽이
-  부분적인 발음 오류에 대해 완만한 점수가 된다 (음절 단위에서는 자모 하나의 오류도
-  음절 전체의 오류로 계산됨)
+결과는 cer_results/cer_{model_name}.csv와 .png에 저장된다.
 """
 
 import argparse
@@ -228,9 +215,9 @@ if __name__ == "__main__":
     parser.add_argument("--whisper_model", type=str, default="large-v3")
     parser.add_argument("--whisper_device", type=str, default=None)  # VRAM 不足時に whisper だけ CPU に逃がす
     parser.add_argument("--compute_type", type=str, default="bfloat16")
-    parser.add_argument("--unit", type=str, default="jamo", choices=["jamo", "syllable"])  # fmt: skip
-    parser.add_argument("--train_list", type=Path, default=None, help="전처리된 train.list 경로 (기본: {dataset_root}/{model_name}/train.list)")  # fmt: skip
-    parser.add_argument("--num_train", type=int, default=4, help="train.list에서 샘플링할 학습 문장 수 (0으로 비활성)")  # fmt: skip
+    parser.add_argument("--unit", type=str, default="jamo", choices=["jamo", "syllable"])
+    parser.add_argument("--train_list", type=Path, default=None, help="전처리된 train.list 경로 (기본: {dataset_root}/{model_name}/train.list)")
+    parser.add_argument("--num_train", type=int, default=4, help="train.list에서 샘플링할 학습 문장 수 (0으로 비활성)")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -239,14 +226,14 @@ if __name__ == "__main__":
     unit: str = args.unit
 
     # 학습 문장 그룹 (암기 성능 추적용 — 일반화 test_texts와 분리 집계)
-    train_list_path: Path = args.train_list or (path_config.dataset_root / model_name / "train.list")  # fmt: skip
+    train_list_path: Path = args.train_list or (path_config.dataset_root / model_name / "train.list")
     if args.num_train > 0 and train_list_path.exists():
         train_texts = load_train_texts(train_list_path, args.num_train, args.seed)
         logger.info(f"Sampled {len(train_texts)} train sentences from {train_list_path}")
     else:
         train_texts = []
         if args.num_train > 0:
-            logger.warning(f"train.list not found at {train_list_path} — train group is skipped")  # fmt: skip
+            logger.warning(f"train.list not found at {train_list_path} — train group is skipped")
 
     # Whisper モデルの読み込み (全チェックポイントで共有)
     from faster_whisper import WhisperModel
@@ -254,7 +241,7 @@ if __name__ == "__main__":
     whisper_device: str = args.whisper_device or device
     logger.info(f"Loading faster-whisper model ({args.whisper_model}) on {whisper_device}")
     try:
-        whisper = WhisperModel(args.whisper_model, device=whisper_device, compute_type=args.compute_type)  # fmt: skip
+        whisper = WhisperModel(args.whisper_model, device=whisper_device, compute_type=args.compute_type)
     except ValueError as e:
         logger.warning(f"Failed to load model, so use `auto` compute_type: {e}")
         whisper = WhisperModel(args.whisper_model, device=whisper_device)
@@ -284,7 +271,7 @@ if __name__ == "__main__":
             device=device,
         )
         cers = []
-        for group, text in [("train", t) for t in train_texts] + [("test", t) for t in test_texts]:  # fmt: skip
+        for group, text in [("train", t) for t in train_texts] + [("test", t) for t in test_texts]:
             sr, audio = model.infer(text, language=Languages.KO)
             # faster-whisper にはファイルパスで渡す (内部でリサンプリングされる)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -308,19 +295,19 @@ if __name__ == "__main__":
     # 平均を計算し、CER が低い順にソート
     n_train = len(train_texts)
     results = [
-        (model_file, step, cers + [float(np.mean(c)) if c else float("nan") for c in (cers[:n_train], cers[n_train:], cers)])  # fmt: skip
+        (model_file, step, cers + [float(np.mean(c)) if c else float("nan") for c in (cers[:n_train], cers[n_train:], cers)])
         for model_file, step, cers in results
     ]
     results = sorted(results, key=lambda x: x[2][-2])  # 일반화 성능(mean_test) 기준 정렬
     for model_file, step, cers in results:
-        logger.info(f"{model_file}: mean CER = {cers[-1]:.3f} (train {cers[-3]:.3f} / test {cers[-2]:.3f})")  # fmt: skip
+        logger.info(f"{model_file}: mean CER = {cers[-1]:.3f} (train {cers[-3]:.3f} / test {cers[-2]:.3f})")
 
     with open(
         cer_result_dir / f"cer_{model_name}.csv", "w", encoding="utf_8_sig", newline=""
     ) as f:
         writer = csv.writer(f)
-        text_cols = [f"[train] {t}" for t in train_texts] + [f"[test] {t}" for t in test_texts]  # fmt: skip
-        writer.writerow(["model_path", "step"] + text_cols + ["mean_train", "mean_test", "mean"])  # fmt: skip
+        text_cols = [f"[train] {t}" for t in train_texts] + [f"[test] {t}" for t in test_texts]
+        writer.writerow(["model_path", "step"] + text_cols + ["mean_train", "mean_test", "mean"])
         for model_file, step, cers in results:
             writer.writerow([model_file] + [step] + cers)
     logger.info(f"cer_{model_name}.csv has been saved.")
@@ -339,8 +326,8 @@ if __name__ == "__main__":
         idx = col + 1 if col < n_train else col - n_train + 1
         plt.plot(df.index, df.iloc[:, col], label=f"{group} {idx}", alpha=0.3)
     if n_train > 0:
-        plt.plot(df.index, df.iloc[:, -3], label="Mean (train)", color="tab:blue", linewidth=2)  # fmt: skip
-    plt.plot(df.index, df.iloc[:, -2], label="Mean (test)", color="tab:orange", linewidth=2)  # fmt: skip
+        plt.plot(df.index, df.iloc[:, -3], label="Mean (train)", color="tab:blue", linewidth=2)
+    plt.plot(df.index, df.iloc[:, -2], label="Mean (test)", color="tab:orange", linewidth=2)
     plt.plot(df.index, df.iloc[:, -1], label="Mean", color="black", linewidth=2)
     plt.title(f"TTS Round-trip CER ({unit} level, lower is better)")
     plt.xlabel("Step Count")

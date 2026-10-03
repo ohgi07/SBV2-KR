@@ -43,8 +43,8 @@ def load_safetensors(
     else:
         model_state_dict = model.state_dict()
     for key in list(tensors.keys()):
-        if key in model_state_dict and tensors[key].shape != model_state_dict[key].shape:  # fmt: skip
-            expanded = expand_embedding_if_needed(key, tensors[key], model_state_dict[key])  # fmt: skip
+        if key in model_state_dict and tensors[key].shape != model_state_dict[key].shape:
+            expanded = expand_embedding_if_needed(key, tensors[key], model_state_dict[key])
             if expanded is not None:
                 tensors[key] = expanded
 

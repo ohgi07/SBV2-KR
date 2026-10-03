@@ -11,6 +11,7 @@ NDC 発表の教訓「基盤モデルのコーパスに登場しない記号・�
 """
 
 import argparse
+import heapq
 import json
 import statistics
 import sys
@@ -63,10 +64,9 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
     punct_counts: Counter[str] = Counter()
     ellipsis_count = 0  # "..." (말줄임표)
     sibilant_vowel_contexts: dict[str, Counter[str]] = defaultdict(Counter)
-    text_lengths: list[int] = []
+    texts: list[tuple[int, str]] = []  # (정규화 후 문자 수, 원문)
     durations: list[float] = []
     unmeasured = 0
-    long_texts: list[tuple[int, str]] = []
     speakers: Counter[str] = Counter()
     languages: Counter[str] = Counter()
     error_lines: list[str] = []
@@ -95,8 +95,7 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
                 error_lines.append(f"{line} ({e})")
                 continue
 
-            text_lengths.append(len(norm))
-            long_texts.append((len(norm), text))
+            texts.append((len(norm), text))
             ellipsis_count += norm.count("...")
 
             for i, phone in enumerate(phones):
@@ -117,8 +116,7 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
                     # 조용히 빠지면 "측정했는데 특이사항 없음"과 구분이 안 되므로 센다
                     unmeasured += 1
 
-    long_texts.sort(reverse=True)
-
+    text_lengths = [n for n, _ in texts]
     audio_report: dict = {}
     if durations:
         audio_report = {
@@ -164,9 +162,9 @@ def analyze(esd_path: Path, check_audio: bool = True) -> dict:
                 "mean": round(statistics.mean(text_lengths), 1),
                 "median": statistics.median(text_lengths),
                 "max": max(text_lengths),
-                "longest_samples": [t for _, t in long_texts[:5]],
+                "longest_samples": [t for _, t in heapq.nlargest(5, texts)],
             }
-            if text_lengths
+            if texts
             else {}
         ),
         "audio_duration_sec": audio_report,
@@ -223,13 +221,13 @@ def print_report(report: dict) -> None:
 
     if report["text_length"]:
         tl = report["text_length"]
-        print(f"\n--- 텍스트 길이 (정규화 후 문자 수) ---")
+        print("\n--- 텍스트 길이 (정규화 후 문자 수) ---")
         print(f"  평균 {tl['mean']} / 중앙값 {tl['median']} / 최대 {tl['max']}")
 
     ad = report["audio_duration_sec"]
     if ad.get("files_measured"):
         print(f"\n--- 음성 길이 ({ad['files_measured']}개 파일) ---")
-        print(f"  평균 {ad['mean']}초 / 중앙값 {ad['median']}초 / 최대 {ad['max']}초 / 총 {ad['total_hours']}시간")  # fmt: skip
+        print(f"  평균 {ad['mean']}초 / 중앙값 {ad['median']}초 / 최대 {ad['max']}초 / 총 {ad['total_hours']}시간")
         if ad["mean"] > MEAN_DURATION_WARNING_SEC:
             print(
                 f"  [경고] 평균 음성 길이가 {MEAN_DURATION_WARNING_SEC}초를 초과합니다. "

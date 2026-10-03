@@ -1,8 +1,8 @@
 """
 한국어 텍스트로부터의 BERT 특징량 추출.
 
-BERT 모델은 기본적으로 klue/roberta-large (hidden_size=1024)를 사용한다.
-(beomi/kcbert-large 등 hidden_size=1024인 다른 한국어 모델로 교체도 가능)
+BERT 모델은 기본적으로 klue/roberta-large (hidden_size=1024)를 사용한다
+(hidden_size가 1024인 다른 한국어 모델로 교체도 가능).
 중국어 (문자 단위 토크나이즈)와 달리 한국어 모델은 WordPiece 서브워드
 토크나이즈를 하므로 토큰 수와 문자 수가 일치하지 않는다.
 그래서 offset mapping을 이용해 토큰열을 문자 단위 특징량으로 전개한 뒤,
@@ -28,8 +28,7 @@ if TYPE_CHECKING:
 
 
 # 모델의 입력 상한을 넘는 텍스트는 잘라낸다 (초과분의 문자는 근처 토큰의 특징량으로 대체됨)
-# 상한은 토크나이저의 model_max_length에서 가져온다
-# (kcbert-large: 300, klue/roberta-large: 512 등 모델마다 다름)
+# 상한은 모델마다 달라 토크나이저의 model_max_length에서 가져오며, 이 값은 그것이 없을 때 쓴다
 __MAX_LENGTH_FALLBACK = 512
 
 
@@ -42,7 +41,7 @@ def __get_max_length(tokenizer: Any) -> int:
     return max_length
 
 
-def __build_char_to_token_map(offsets: list[tuple[int, int]], num_chars: int) -> list[int]:  # fmt: skip
+def __build_char_to_token_map(offsets: list[tuple[int, int]], num_chars: int) -> list[int]:
     """
     토큰별 (시작, 끝) 문자 오프셋에서, 문자 인덱스 → 토큰 인덱스 대응표를 만든다.
     어느 토큰에도 속하지 않는 문자 (스페이스나 잘려나간 문자)에는 직전의 유효한
@@ -134,14 +133,14 @@ def extract_bert_feature(
             max_length=max_length,
         )
         offsets = inputs.pop("offset_mapping")[0].tolist()
-        res = model(**{k: v.to(device) for k, v in inputs.items()}, output_hidden_states=True)  # fmt: skip
+        res = model(**{k: v.to(device) for k, v in inputs.items()}, output_hidden_states=True)
         return res["hidden_states"][-3][0].cpu(), offsets
 
     with torch.no_grad():
         res, offsets = run(text)
         style_res_mean = run(assist_text)[0].mean(0) if assist_text else None
 
-    return __to_phone_level(res, style_res_mean, offsets, text, word2ph, assist_text_weight)  # fmt: skip
+    return __to_phone_level(res, style_res_mean, offsets, text, word2ph, assist_text_weight)
 
 
 def extract_bert_feature_onnx(
@@ -175,7 +174,7 @@ def extract_bert_feature_onnx(
     output_name = session.get_outputs()[0].name
 
     # 입력 텐서 전송에 사용할 디바이스 종류, 디바이스 ID, 실행 옵션을 가져온다
-    device_type, device_id, run_options = get_onnx_device_options(session, onnx_providers)  # fmt: skip
+    device_type, device_id, run_options = get_onnx_device_options(session, onnx_providers)
     max_length = __get_max_length(tokenizer)
 
     def run(input_text: str) -> tuple[NDArray[Any], list[tuple[int, int]]]:
@@ -205,4 +204,4 @@ def extract_bert_feature_onnx(
     res, offsets = run(text)
     style_res_mean = np.mean(run(assist_text)[0], axis=0) if assist_text else None
 
-    return __to_phone_level(res, style_res_mean, offsets, text, word2ph, assist_text_weight)  # fmt: skip
+    return __to_phone_level(res, style_res_mean, offsets, text, word2ph, assist_text_weight)

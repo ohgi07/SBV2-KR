@@ -199,10 +199,6 @@ speech_style_keys = ["enc_p"]
 tempo_keys = ["sdp", "dp"]
 
 
-def make_interactive():
-    return gr.update(interactive=True, value="음성 합성")
-
-
 def make_non_interactive():
     return gr.update(interactive=False, value="음성 합성 (모델을 로드해 주세요)")
 

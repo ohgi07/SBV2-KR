@@ -29,7 +29,7 @@ __REPLACE_MAP = {
     **dict.fromkeys("~～〜˗‐‒–—―⁃−⎯⏤─━⸺⸻", "-"),
 }
 # 긴 키부터 매치해야 한다 (··· 가 · 보다 먼저)
-__REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in sorted(__REPLACE_MAP, key=len, reverse=True)))  # fmt: skip
+__REPLACE_PATTERN = re.compile("|".join(re.escape(p) for p in sorted(__REPLACE_MAP, key=len, reverse=True)))
 
 # 알파벳 → 한국어 이름
 __ALPHABET_MAP = {
@@ -38,7 +38,7 @@ __ALPHABET_MAP = {
     "m": "엠", "n": "엔", "o": "오", "p": "피", "q": "큐", "r": "알",
     "s": "에스", "t": "티", "u": "유", "v": "브이", "w": "더블유", "x": "엑스",
     "y": "와이", "z": "제트",
-}  # fmt: skip
+}
 
 # 숫자 읽기 (한자어 수사)
 __SINO_DIGITS = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"]
@@ -52,12 +52,12 @@ __MAX_GROUPED_DIGITS = len(__GROUP_UNITS) * 4
 __NATIVE_TENS = {
     1: "열", 2: "스물", 3: "서른", 4: "마흔", 5: "쉰",
     6: "예순", 7: "일흔", 8: "여든", 9: "아흔",
-}  # fmt: skip
+}
 ## 관형형 (단위명사 바로 앞에서 쓰는 형태): 하나→한, 둘→두, 셋→세, 넷→네
 __NATIVE_ONES_DET = {
     1: "한", 2: "두", 3: "세", 4: "네", 5: "다섯",
     6: "여섯", 7: "일곱", 8: "여덟", 9: "아홉",
-}  # fmt: skip
+}
 
 # 고유어 수사로 읽는 단위명사 (조수사)
 ## 긴 것부터 먼저 매치해야 한다 (시간 → 시, 번째 → 번 보다 앞에)
@@ -67,7 +67,7 @@ __NATIVE_COUNTERS = [
     "마디", "모금", "접시", "스푼", "갈래", "발짝",
     "개", "명", "살", "시", "번", "잔", "병", "대", "장", "권",
     "채", "척", "판", "곡", "줄", "벌", "알", "곳", "근", "발", "축", "쾌",
-]  # fmt: skip
+]
 
 # 고유어로 읽을 것처럼 보이지만 한자어 수사로 읽는 단위 (「개」 등의 오매치 방지를 위해 먼저 매치)
 __SINO_COUNTERS = ["개월", "개국", "개소", "개년", "인분", "번지", "분"]
@@ -90,7 +90,7 @@ __UNIT_MAP = {
     "kg": "킬로그램", "mg": "밀리그램", "g": "그램", "t": "톤",
     "km": "킬로미터", "cm": "센티미터", "mm": "밀리미터", "m": "미터",
     "mL": "밀리리터", "ml": "밀리리터", "L": "리터", "l": "리터",
-}  # fmt: skip
+}
 ## 속도는 「시속/초속 N 단위」로 어순을 바꿔 읽는다
 __SPEED_UNIT_MAP = {"km/h": ("시속", "킬로미터"), "m/s": ("초속", "미터")}
 __UNIT_PATTERN = re.compile(
@@ -117,7 +117,7 @@ __MONTH_SPECIAL_MAP = {"6": "유월", "10": "시월"}
 # 알파벳 바로 뒤의 한 자리 숫자는 영어식으로 읽는 관례를 따른다: F1 → 에프원, mp3 → 엠피쓰리
 ## 숫자 뒤에 알파벳이 오는 경우(5G → 오지)와 여러 자리(F16 → 에프십육)는 한자어 읽기가 관례
 __ENGLISH_DIGIT_PATTERN = re.compile(r"(?<=[A-Za-z])[0-9](?![0-9])")
-__ENGLISH_DIGIT_NAMES = ["제로", "원", "투", "쓰리", "포", "파이브", "식스", "세븐", "에이트", "나인"]  # fmt: skip
+__ENGLISH_DIGIT_NAMES = ["제로", "원", "투", "쓰리", "포", "파이브", "식스", "세븐", "에이트", "나인"]
 
 # 전화번호 (하이픈 구분 숫자열)·안내번호는 낱자로 읽는다: 010-1234-5678 → 공일공 일이삼사 오육칠팔
 ## 15-20 같은 범위 표기를 피하기 위해 하이픈 뒤 그룹은 3-4자리만 인정한다
@@ -146,7 +146,7 @@ __NUMBER_PATTERN = re.compile(r"[0-9]+(\.[0-9]+)?")
 __NUMBER_WITH_SEPARATOR_PATTERN = re.compile("[0-9]{1,3}(,[0-9]{3})+")
 
 # 정규화 후에 남기는 것이 허용된 문자 이외를 제거하는 패턴
-__CLEANUP_PATTERN = re.compile(r"[^가-힣 " + "".join(re.escape(p) for p in PUNCTUATIONS) + r"]+")  # fmt: skip
+__CLEANUP_PATTERN = re.compile(r"[^가-힣 " + "".join(re.escape(p) for p in PUNCTUATIONS) + r"]+")
 
 
 def __read_digits(digits: str) -> str:
@@ -199,7 +199,7 @@ def read_number(num_str: str) -> str:
                 int_reading = reading + unit + int_reading
 
     # 소수부는 한 자리씩 (0은 영)
-    frac_reading = "점" + "".join(__SINO_DIGITS[int(d)] or "영" for d in frac_part) if frac_part else ""  # fmt: skip
+    frac_reading = "점" + "".join(__SINO_DIGITS[int(d)] or "영" for d in frac_part) if frac_part else ""
     return int_reading + frac_reading
 
 
@@ -269,11 +269,11 @@ def normalize_text(text: str) -> str:
     # 전화번호·안내번호는 낱자 읽기로 (010-1234-5678 → 공일공 일이삼사 오육칠팔, 112 → 일일이)
     res = __PHONE_PATTERN.sub(lambda m: " ".join(__read_digits(g) for g in m.group().split("-")), res)
     res = __HOTLINE_PATTERN.sub(lambda m: __read_digits(m.group(1)), res)
-    res = __TWO_DIGIT_YEAR_PATTERN.sub(lambda m: __read_digits(m.group(1)) + m.group(2) + m.group(3), res)  # fmt: skip
+    res = __TWO_DIGIT_YEAR_PATTERN.sub(lambda m: __read_digits(m.group(1)) + m.group(2) + m.group(3), res)
     res = __LEADING_ZERO_PATTERN.sub(lambda m: __read_digits(m.group()), res)
 
     # 점수의 「숫자 대 숫자」는 양쪽 다 한자어로 (11 대 8 → 십일 대 팔)
-    res = __SCORE_PATTERN.sub(lambda m: read_number(m.group(1)) + m.group(2) + read_number(m.group(3)), res)  # fmt: skip
+    res = __SCORE_PATTERN.sub(lambda m: read_number(m.group(1)) + m.group(2) + read_number(m.group(3)), res)
 
     # 번호 문맥의 「N번」은 한자어로 (3번 출구 → 삼번 출구)
     res = __BEON_NUMBER_PATTERN.sub(lambda m: read_number(m.group(1)) + m.group(2), res)

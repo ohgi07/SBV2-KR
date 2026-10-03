@@ -6,9 +6,8 @@ from pathlib import Path
 import yaml
 from huggingface_hub import hf_hub_download
 
-# torch<2.6 では transformers が pytorch_model.bin のロードを拒否するため safetensors に変換する
-from style_bert_vits2.utils import ensure_safetensors_model
 from style_bert_vits2.logging import logger
+from style_bert_vits2.utils import ensure_safetensors_model
 
 
 def download_bert_models():

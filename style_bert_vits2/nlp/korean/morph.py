@@ -9,14 +9,16 @@ pronounce.py의 음운 규칙 엔진은 형태소 경계 정보가 필요한 규
 1. 발음 예외 사전: 어휘화된 합성어의 ㄴ 첨가 (솜이불→솜니불)나 예외어 (맛있다)의
    재작성. ㄴ만 삽입하면 나머지 음운 변화 (비음화·유음화 등)는
    pronounce.py가 올바르게 유도한다.
-2. kiwipiepy 형태소 분석 (설치되어 있는 경우에만):
+2. ㄷ 받침 + 혀/혔의 구개음화 (닫혀→다쳐)
+3. kiwipiepy 형태소 분석 (설치되어 있는 경우에만):
    - 속격 조사 의 → 에 (나의→나에)
    - 형태소 경계의 ㄴ 첨가 (한+여름→한녀름, 헛+일→헛닐)
    - 어절 경계의 ㄴ 첨가 (제29항 붙임2: 한 일→한 닐 → [한닐])
+   - 용언 어간말 ㄴ/ㅁ 뒤 어미의 경음화 (신다→신따, 안고→안꼬), 어간말 ㄺ + ㄱ 어미 (맑고→말꼬)
    - 관형사형 어미 -ㄹ 뒤의 경음화 (갈 데가→갈 떼가)
-   - 용언 어간말 ㄴ/ㅁ 뒤 어미의 경음화 (신다→신따, 안고→안꼬)
+   - -ㄹ로 시작하는 축약 어미의 경음화 (할수록→할쑤록)
 
-kiwipiepy가 없으면 예외 사전만 적용된다.
+kiwipiepy가 없으면 1·2만 적용된다. 절 경계 휴지 판정 (clause_boundary_spaces)도 이 모듈이 맡는다.
 """
 
 import functools
@@ -296,7 +298,7 @@ def __tensify(chars: list[str], pos: int, onsets=TENSIFICATION_MAP) -> None:
 
 def __insert_n(chars: list[str], pos: int, left: int) -> None:
     """ㄴ 첨가: chars[pos]가 이/야/여/요/유로 시작하고 chars[left]에 받침이 있으면 초성을 ㄴ으로 바꾼다"""
-    if pos < len(chars) and is_hangul_syllable(chars[pos]) and is_hangul_syllable(chars[left]):  # fmt: skip
+    if pos < len(chars) and is_hangul_syllable(chars[pos]) and is_hangul_syllable(chars[left]):
         cho, jung, _ = decompose(chars[pos])
         if cho == "ㅇ" and jung in __N_INSERTION_VOWELS and decompose(chars[left])[2]:
             chars[pos] = __set_cho(chars[pos], "ㄴ")
@@ -325,11 +327,11 @@ def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
     for token in tokens:
         start = token.start
         # 1. 속격 조사 의 → 에
-        if token.tag == "JKG" and token.form == "의" and start < len(chars) and chars[start] == "의":  # fmt: skip
+        if token.tag == "JKG" and token.form == "의" and start < len(chars) and chars[start] == "의":
             chars[start] = "에"
 
         # 인접한 형태소 (같은 어절 안에서 직전 형태소와 틈 없이 이어짐)인 경우에만
-        adjacent = prev_token is not None and prev_token.start + prev_token.len == start and start > 0  # fmt: skip
+        adjacent = prev_token is not None and prev_token.start + prev_token.len == start and start > 0
         # 직전 형태소와 공백 1개를 사이에 둔 경우 (어절 경계)
         cross_word = (
             prev_token is not None
@@ -340,12 +342,12 @@ def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
 
         # 2. 형태소 경계의 ㄴ 첨가 (한+여름 → 한녀름)
         #    조건은 재작성된 chars로 본다. 예외 사전이 규칙을 끄는 통로다 (송벼련의 ㄹ이 첨가를 막음)
-        if adjacent and prev_token.tag in __N_INSERTION_LEFT_TAGS and token.tag in __N_INSERTION_RIGHT_TAGS:  # fmt: skip
+        if adjacent and prev_token.tag in __N_INSERTION_LEFT_TAGS and token.tag in __N_INSERTION_RIGHT_TAGS:
             __insert_n(chars, start, start - 1)
         # 2b. 어절 경계의 ㄴ 첨가 (제29항 붙임2: 한 일→한 닐, 옷 입다→옷 닙다)
         #     앞 어절이 자음 받침으로 끝나고 1음절 실질형태소가 이/야/여/요/유로 시작하는 경우.
         #     첨가 후의 유도 (비음화·유음화)는 pronounce.py의 경계 패스가 수행한다.
-        elif cross_word and token.tag in __N_INSERTION_CROSS_WORD_RIGHT_TAGS and token.len == 1:  # fmt: skip
+        elif cross_word and token.tag in __N_INSERTION_CROSS_WORD_RIGHT_TAGS and token.len == 1:
             __insert_n(chars, start, start - 2)
 
         # 3. 용언 어간말 ㄴ/ㅁ 뒤 어미의 경음화 (신다 → 신따)
@@ -373,7 +375,7 @@ def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
         ## form 문자열로 판정하면 축약형의 "ᆯ" (자모)은 잡히지만 "을/를" 같은
         ## 완성형 음절을 놓치므로, 토큰 마지막 음절의 종성으로 판정한다
         last_pos = start + token.len - 1
-        if token.tag == "ETM" and 0 <= last_pos < len(chars) and is_hangul_syllable(chars[last_pos]):  # fmt: skip
+        if token.tag == "ETM" and 0 <= last_pos < len(chars) and is_hangul_syllable(chars[last_pos]):
             if decompose(chars[last_pos])[2][-1:] == ["ㄹ"]:
                 # 공백 1개까지 건너뛰고 다음 문자를 경음화한다
                 next_pos = start + token.len
@@ -384,7 +386,7 @@ def apply_morph_rules(text: str, tokens: Optional[list[Any]] = None) -> str:
         # 5. -(으)ㄹ로 시작하는 축약 어미의 경음화 (표준발음법 제27항 붙임: 할수록→[할쑤록],
         #    할지→[할찌], 할게→[할께]). kiwi는 축약 어미를 ᆯ수록 같은 자모 ᆯ로 시작하는
         #    겹침 스팬으로 반환하므로, 어미 2음절째 (start+1)가 경음화 대상이 된다.
-        if token.tag in __ENDING_TAGS and len(token.form) >= 2 and token.form[0] == "ᆯ" and token.len >= 2:  # fmt: skip
+        if token.tag in __ENDING_TAGS and len(token.form) >= 2 and token.form[0] == "ᆯ" and token.len >= 2:
             __tensify(chars, start + 1)
 
         prev_token = token

@@ -65,8 +65,6 @@ def kl_loss(z_p, logs_q, m_p, logs_p, z_mask):
 class WavLMLoss(torch.nn.Module):
     def __init__(self, model, wd, model_sr, slm_sr=16000):
         super(WavLMLoss, self).__init__()
-        # torch<2.6 では transformers が pytorch_model.bin のロードを拒否するため、
-        # ローカルモデルに safetensors が無い場合は事前に変換する
         ensure_safetensors_model(model)
         self.wavlm = AutoModel.from_pretrained(model)
         self.wd = wd

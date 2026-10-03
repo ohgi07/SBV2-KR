@@ -2,9 +2,8 @@
 표준 발음법에 기반한 규칙 기반 발음 변환 엔진.
 
 표기상의 한글을 실제로 발음되는 한글로 변환한다 (음절 수는 반드시 보존됨).
-외부 의존성 없이 동작하는 유일한 발음 변환 엔진이며, morph.py의 형태소 기반 보정과
-결합되어 g2p.py에서 사용된다. 어절 내부 규칙에 더해, 공백 하나로 인접한 어절
-쌍에 대한 어절 경계 규칙(연음·격음화·경음화·비음화·유음화)도 적용한다.
+g2p.py에서 morph.py의 형태소 기반 보정 뒤에 사용된다. 어절 내부 규칙에 더해, 공백 하나로
+인접한 어절 쌍에 대한 어절 경계 규칙(연음·격음화·경음화·비음화·유음화)도 적용한다.
 
 구현된 규칙:
 - 져/쪄/쳐의 단모음화 (제5항 다만1): 가져→가저, 가르쳐→가르처
@@ -17,10 +16,8 @@
 - 비음화: 국물→궁물, 십리→심니, 종로→종노
 - 유음화: 신라→실라, 칼날→칼랄
 
-제한 사항 (형태소 분석이 필요해 미구현):
-- ㄴ 첨가 (솜이불→솜니불)
-- 어휘 의미에 따른 예외 (밟다→밥따 등)
-- 한자어 ㄹ 관련의 예외적 경음화
+형태소 정보가 필요한 규칙 (ㄴ 첨가, 밟다→[밥따] 같은 어휘 예외, 한자어 ㄹ 뒤 경음화 등)은
+이 엔진에 넣지 않고, morph.py가 발음 변환 전에 텍스트를 고쳐 써서 처리한다.
 """
 
 from collections.abc import Iterator
@@ -31,20 +28,20 @@ from itertools import groupby
 CHOSEONG = [
     "ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ",
     "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ",
-]  # fmt: skip
+]
 
 # 중성 (jungseong) 21개: 유니코드 조합 순서
 JUNGSEONG = [
     "ㅏ", "ㅐ", "ㅑ", "ㅒ", "ㅓ", "ㅔ", "ㅕ", "ㅖ", "ㅗ", "ㅘ",
     "ㅙ", "ㅚ", "ㅛ", "ㅜ", "ㅝ", "ㅞ", "ㅟ", "ㅠ", "ㅡ", "ㅢ", "ㅣ",
-]  # fmt: skip
+]
 
 # 종성 (jongseong) 27개 (인덱스 1-27, 0은 종성 없음): 유니코드 조합 순서
 JONGSEONG = [
     "", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ",
     "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ",
     "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ",
-]  # fmt: skip
+]
 
 # 겹받침 → 구성 자음 분해 맵
 DOUBLE_CODA_SPLIT = {
@@ -70,7 +67,7 @@ CODA_NEUTRALIZATION = {
     "ㅁ": "ㅁ",
     "ㅂ": "ㅂ", "ㅍ": "ㅂ",
     "ㅇ": "ㅇ",
-}  # fmt: skip
+}
 
 # 격음화: 평음 + ㅎ / ㅎ + 평음 → 격음
 ASPIRATION_MAP = {"ㄱ": "ㅋ", "ㄷ": "ㅌ", "ㅂ": "ㅍ", "ㅈ": "ㅊ"}
@@ -114,18 +111,11 @@ def decompose(char: str) -> tuple[str, str, list[str]]:
 
 def compose(cho: str, jung: str, coda: list[str]) -> str:
     """(초성, 중성, 종성 리스트)에서 한글 음절을 조합한다"""
-    # 겹받침은 규칙 적용 후에는 보통 오지 않지만, decompose()에서 나온 것이라면 반드시 조합 가능해야 한다.
-    # 조용히 자모를 버리면 원인 추적이 어려워지므로 명시적으로 실패시킨다
+    # 조합할 수 없는 겹받침은 자모를 조용히 버리지 않고 실패시킨다 (원인 추적용)
     jong = "".join(coda) if len(coda) < 2 else __DOUBLE_CODA_JOIN.get(tuple(coda))
     if jong is None:
         raise ValueError(f"Cannot compose invalid double coda: {coda}")
-    code = (
-        HANGUL_BASE
-        + __CHOSEONG_INDEX[cho] * 588
-        + __JUNGSEONG_INDEX[jung] * 28
-        + __JONGSEONG_INDEX[jong]
-    )
-    return chr(code)
+    return chr(HANGUL_BASE + __CHOSEONG_INDEX[cho] * 588 + __JUNGSEONG_INDEX[jung] * 28 + __JONGSEONG_INDEX[jong])
 
 
 def __coda_pairs(syls: list[list]) -> Iterator[tuple[list, list]]:
@@ -229,7 +219,7 @@ def __apply_tensification(syls: list[list]) -> None:
     자음군 단순화로 장애음 정보가 사라지기 전에, 중화 후의 값으로 판정해야 한다
     """
     for cur, nxt in __coda_pairs(syls):
-        if CODA_NEUTRALIZATION[cur[2][-1]] in ("ㄱ", "ㄷ", "ㅂ") and nxt[0] in TENSIFICATION_MAP:  # fmt: skip
+        if CODA_NEUTRALIZATION[cur[2][-1]] in ("ㄱ", "ㄷ", "ㅂ") and nxt[0] in TENSIFICATION_MAP:
             nxt[0] = TENSIFICATION_MAP[nxt[0]]
 
 

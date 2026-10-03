@@ -450,7 +450,7 @@ class TTSModel:
             language = self.trained_language or Languages.JP
         logger.info(f"Start generating audio data from text:\n{text}")
         # KO は JP-Extra 系アーキテクチャ (単一 BERT 入力) を共用するため許可する
-        if language not in ("JP", "KO") and self.hyper_parameters.version.endswith("JP-Extra"):  # fmt: skip
+        if language not in ("JP", "KO") and self.hyper_parameters.version.endswith("JP-Extra"):
             raise ValueError(
                 "The model is trained with JP-Extra, but the language is not JP or KO"
             )

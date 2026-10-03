@@ -172,36 +172,9 @@ NUM_EN_TONES = 4
 ## 音素は Unicode Hangul Jamo (初声 U+1100-, 中声 U+1161-, 終声 U+11A8-) をそのまま記号として用いる
 ## 初声の "ㅇ" (無音) は音素として出力されないため含めない
 ## 終声は標準発音法の中和 (음절의 끝소리 규칙) 適用後の 7 종성のみ
-KO_INITIALS = [
-    "ᄀ",  # ᄀ
-    "ᄁ",  # ᄁ
-    "ᄂ",  # ᄂ
-    "ᄃ",  # ᄃ
-    "ᄄ",  # ᄄ
-    "ᄅ",  # ᄅ
-    "ᄆ",  # ᄆ
-    "ᄇ",  # ᄇ
-    "ᄈ",  # ᄈ
-    "ᄉ",  # ᄉ
-    "ᄊ",  # ᄊ
-    "ᄌ",  # ᄌ
-    "ᄍ",  # ᄍ
-    "ᄎ",  # ᄎ
-    "ᄏ",  # ᄏ
-    "ᄐ",  # ᄐ
-    "ᄑ",  # ᄑ
-    "ᄒ",  # ᄒ
-]
+KO_INITIALS = [chr(code) for code in range(0x1100, 0x1113) if code != 0x110B]  # ᄀ-ᄒ except ᄋ (18 initials)
 KO_VOWELS = [chr(code) for code in range(0x1161, 0x1176)]  # ᅡ-ᅵ (21 vowels)
-KO_FINALS = [
-    "ᆨ",  # ᆨ
-    "ᆫ",  # ᆫ
-    "ᆮ",  # ᆮ
-    "ᆯ",  # ᆯ
-    "ᆷ",  # ᆷ
-    "ᆸ",  # ᆸ
-    "ᆼ",  # ᆼ
-]
+KO_FINALS = ["ᆨ", "ᆫ", "ᆮ", "ᆯ", "ᆷ", "ᆸ", "ᆼ"]
 KO_SYMBOLS = KO_INITIALS + KO_VOWELS + KO_FINALS
 NUM_KO_TONES = 1
 
