@@ -504,7 +504,8 @@ def run():
             f"******************Found the model. Current epoch is {epoch_str}, gloabl step is {global_step}*********************"
         )
     else:
-        for prefix, path in utils.checkpoints.find_pretrained_paths(model_dir, list(models)).items():
+        # JP-Extra の事前学習モデルには DUR_0 が配布されていないので、duration discriminator だけはゼロから学習してよい
+        for prefix, path in utils.checkpoints.find_pretrained_paths(model_dir, list(models), optional=("DUR",)).items():
             utils.safetensors.load_safetensors(path, models[prefix][0])
         logger.info("Loaded the pretrained models.")
         epoch_str = 1

@@ -272,16 +272,20 @@ def get_latest_checkpoint_path(
 
 
 def find_pretrained_paths(
-    model_dir_path: Union[str, Path], prefixes: list[str]
+    model_dir_path: Union[str, Path], prefixes: list[str], optional: tuple[str, ...] = ()
 ) -> dict[str, Path]:
     """
     学習開始時に読み込む事前学習モデル ({prefix}_0.safetensors) のパスを返す。
     1 つでも欠けていれば、事前学習なしのゼロからの学習が黙って始まらないよう FileNotFoundError を送出する。
+    optional の prefix は欠けていても警告して返り値から除き、そのモデルだけゼロから学習させる。
     """
     paths = {p: Path(model_dir_path) / f"{p}_0.safetensors" for p in prefixes}
-    missing = [path.name for path in paths.values() if not path.is_file()]
-    if missing:
-        raise FileNotFoundError(f"Pretrained models not found in {model_dir_path}: {', '.join(missing)}")
+    missing = [p for p, path in paths.items() if not path.is_file()]
+    required = [paths[p].name for p in missing if p not in optional]
+    if required:
+        raise FileNotFoundError(f"Pretrained models not found in {model_dir_path}: {', '.join(required)}")
+    for p in missing:
+        logger.warning(f"{paths.pop(p).name} not found in {model_dir_path}, so {p} is trained from scratch")
     return paths
 
 
