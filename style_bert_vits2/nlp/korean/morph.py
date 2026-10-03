@@ -194,6 +194,7 @@ def get_kiwi():
     미설치라면 None을 반환한다 (결과를 캐시하므로 로드 시도는 한 번뿐).
     """
     try:
+        import kiwipiepy
         from kiwipiepy import Kiwi
 
         kiwi = Kiwi()
@@ -203,6 +204,13 @@ def get_kiwi():
             "morphology-aware pronunciation rules are disabled"
         )
         return None
+    # requirements.txt의 핀과 같은 범위. 0.24부터 분석이 바뀌어(신다→시+ᆫ다 등) 학습 데이터와 발음이 달라진다
+    version = tuple(int(x) for x in kiwipiepy.__version__.split(".")[:2])
+    if not (0, 22) <= version < (0, 24):
+        logger.warning(
+            f"kiwipiepy {kiwipiepy.__version__} is outside the supported range >=0.22,<0.24, "
+            "so Korean pronunciations may differ from the training data. Install the version in requirements.txt."
+        )
     logger.info("Using kiwipiepy for morphology-aware Korean pronunciation")
     return kiwi
 
