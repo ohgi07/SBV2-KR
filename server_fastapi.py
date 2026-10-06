@@ -5,7 +5,6 @@ TODO: server_editor.pyと統合する?
 
 import argparse
 import asyncio
-import os
 import sys
 from io import BytesIO
 from pathlib import Path
@@ -18,7 +17,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from scipy.io import wavfile
 
 from config import get_config
@@ -433,20 +432,6 @@ if __name__ == "__main__":
             "memory_percent": memory_percent,
             "gpu": gpuInfo,
         }
-
-    @app.get("/tools/get_audio", response_class=AudioResponse)
-    def get_audio(
-        request: Request, path: str = Query(..., description="local wav path")
-    ):
-        """wavデータを取得する"""
-        logger.info(
-            f"{request.client.host}:{request.client.port}/tools/get_audio  { unquote(str(request.query_params) )}"
-        )
-        if not os.path.isfile(path):
-            raise_validation_error(f"path={path} not found", "path")
-        if not path.lower().endswith(".wav"):
-            raise_validation_error(f"wav file not found in {path}", "path")
-        return FileResponse(path=path, media_type="audio/wav")
 
     logger.info(f"server listen: http://127.0.0.1:{config.server_config.port}")
     logger.info(f"API docs: http://127.0.0.1:{config.server_config.port}/docs")
