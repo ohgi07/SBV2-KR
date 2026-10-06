@@ -224,7 +224,7 @@ def clean_checkpoints(
 
     def x_sorted(_x: str) -> list[str]:
         return sorted(
-            [f for f in ckpts_files if f.startswith(_x) and not f.endswith("_0.pth")],
+            [f for f in ckpts_files if f.startswith(_x) and f.endswith(".pth") and not f.endswith("_0.pth")],
             key=sort_key,
         )
 
