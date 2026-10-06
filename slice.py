@@ -1,5 +1,6 @@
 import argparse
 import shutil
+import sys
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -165,6 +166,13 @@ if __name__ == "__main__":
     audio_files = [file for file in input_dir.rglob("*") if is_audio_file(file)]
 
     logger.info(f"Found {len(audio_files)} audio files.")
+    # 既存の raw/ は確認なしで消すので、入力が見つからない場合や raw/ 自身を入力にした場合は消す前に止める
+    if not audio_files:
+        logger.error(f"No audio files found in {input_dir}, so {output_dir} is left untouched.")
+        sys.exit(1)
+    if input_dir.resolve().is_relative_to(output_dir.resolve()):
+        logger.error(f"Input directory {input_dir} is inside {output_dir}, which is deleted before slicing.")
+        sys.exit(1)
     if output_dir.exists():
         logger.warning(f"Output directory {output_dir} already exists, deleting...")
         shutil.rmtree(output_dir)
